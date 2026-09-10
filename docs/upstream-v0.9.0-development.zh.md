@@ -196,3 +196,7 @@ git diff --stat base/dataelement-v0.9.0-2a847f2...product/v0.9.0
 - 只有在 PPT 包正确声明并验证 `webServer` 注入、正常启动回归测试通过后，才重新加入 `dsh-ppt-composer` Entry。
 
 禁用后的验证结果：PPT 组合与 Safe Mode 关键测试 12 项通过；完整测试使用 15 秒超时后 749 项通过、2 项跳过；类型检查和生产构建通过；真实开发客户端正常启动到 Harness Web UI。
+
+## VinaRouter 产品接入
+
+`product/v0.9.0` 内置了 VinaRouter 登录、专用 API Token 获取、模型选择和默认模型配置流程。实现与操作说明见 [DSH Desktop 接入 VinaRouter](./vinabot-integration.zh.md)。

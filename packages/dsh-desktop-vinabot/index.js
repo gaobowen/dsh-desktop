@@ -1,0 +1,587 @@
+import { randomUUID } from 'node:crypto'
+
+import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+
+/** Stable Cordis plugin name. */
+export const name = 'dsh-desktop-vinabot'
+
+/** Host services used to persist the provider and expose same-origin routes. */
+export const inject = ['connection', 'settings', 'credentials', 'agentDefaultModel']
+
+export const VINABOT_ORIGIN = 'https://router.vinabot.ai'
+export const VINABOT_API_BASE = `${VINABOT_ORIGIN}/v1`
+export const VINABOT_PROVIDER = 'vinabot'
+export const VINABOT_CREDENTIAL_REF = 'VINABOT_API_KEY'
+export const VINABOT_SETTINGS_NAMESPACE = 'llm-pi-ai'
+
+export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
+export const LOGIN_PATH = '/api/dsh-desktop/vinabot/login'
+export const TWO_FACTOR_PATH = '/api/dsh-desktop/vinabot/2fa'
+export const CONFIGURE_PATH = '/api/dsh-desktop/vinabot/configure'
+export const CANCEL_PATH = '/api/dsh-desktop/vinabot/cancel'
+
+const MAX_LOCAL_BODY_BYTES = 16 * 1024
+const MAX_UPSTREAM_BODY_BYTES = 4 * 1024 * 1024
+const REQUEST_TIMEOUT_MS = 30_000
+const FLOW_TTL_MS = 10 * 60 * 1000
+const MAX_FLOWS = 16
+
+/** An expected integration failure with a safe client-facing message. */
+export class VinabotIntegrationError extends Error {
+  constructor(message, status = 400, code = 'VINABOT_ERROR', options) {
+    super(message, options)
+    this.name = 'VinabotIntegrationError'
+    this.status = status
+    this.code = code
+  }
+}
+
+/** Avoid reflecting arbitrarily large or control-character-filled upstream messages. */
+function safeMessage(value, fallback) {
+  if (typeof value !== 'string') return fallback
+  const normalized = value.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim()
+  return normalized.length === 0 ? fallback : normalized.slice(0, 500)
+}
+
+/** Return the OpenAI-compatible spelling accepted by the relay. */
+export function normalizeApiKey(value) {
+  const key = typeof value === 'string' ? value.trim() : ''
+  if (key.length === 0) {
+    throw new VinabotIntegrationError('VinaRouter 没有返回可用的 API 密钥。', 502, 'API_KEY_MISSING')
+  }
+  return key.startsWith('sk-') ? key : `sk-${key}`
+}
+
+/** Map NewAPI endpoint identifiers into the two text protocols DSH can use here. */
+export function protocolsOfModel(model) {
+  const endpoints = Array.isArray(model?.supported_endpoint_types)
+    ? model.supported_endpoint_types
+    : []
+  const protocols = []
+  if (endpoints.includes('openai')) protocols.push('openai-completions')
+  if (endpoints.includes('openai-response')) protocols.push('openai-responses')
+  return protocols
+}
+
+/** Keep only text models that can drive the DSH agent over an OpenAI wire protocol. */
+export function normalizeModels(payload) {
+  const rows = Array.isArray(payload?.data) ? payload.data : []
+  const seen = new Set()
+  const models = []
+  for (const row of rows) {
+    const id = typeof row?.id === 'string' ? row.id.trim() : ''
+    if (id.length === 0 || seen.has(id)) continue
+    const protocols = protocolsOfModel(row)
+    if (protocols.length === 0) continue
+    seen.add(id)
+    const label = [row?.name, row?.display_name, row?.displayName]
+      .find((candidate) => typeof candidate === 'string' && candidate.trim().length > 0)
+    models.push({
+      id,
+      name: typeof label === 'string' ? label.trim() : id,
+      protocols
+    })
+  }
+  return models
+}
+
+function asObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined
+}
+
+async function readBoundedResponse(response) {
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_UPSTREAM_BODY_BYTES) {
+    await response.body?.cancel().catch(() => {})
+    throw new VinabotIntegrationError('VinaRouter 返回的数据过大。', 502, 'UPSTREAM_TOO_LARGE')
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  if (bytes.byteLength > MAX_UPSTREAM_BODY_BYTES) {
+    throw new VinabotIntegrationError('VinaRouter 返回的数据过大。', 502, 'UPSTREAM_TOO_LARGE')
+  }
+  const text = new TextDecoder().decode(bytes)
+  if (text.length === 0) return {}
+  try {
+    return JSON.parse(text)
+  } catch (cause) {
+    throw new VinabotIntegrationError(
+      'VinaRouter 返回了无法解析的数据。',
+      502,
+      'UPSTREAM_INVALID_JSON',
+      { cause }
+    )
+  }
+}
+
+function requestSignal(parentSignal) {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  return parentSignal === undefined ? timeout : AbortSignal.any([parentSignal, timeout])
+}
+
+/** Small, secret-redacting client for the documented VinaRouter endpoints. */
+export class VinabotClient {
+  constructor(fetchImpl = globalThis.fetch) {
+    this.fetch = fetchImpl
+  }
+
+  async request(path, options = {}) {
+    const headers = new Headers({ accept: 'application/json' })
+    if (options.accessToken !== undefined) {
+      headers.set('authorization', `Bearer ${options.accessToken}`)
+    } else if (options.apiKey !== undefined) {
+      headers.set('authorization', `Bearer ${options.apiKey}`)
+    }
+    let body
+    if (options.body !== undefined) {
+      headers.set('content-type', 'application/json')
+      body = JSON.stringify(options.body)
+    }
+    let response
+    try {
+      response = await this.fetch(`${VINABOT_ORIGIN}${path}`, {
+        method: options.method ?? 'GET',
+        headers,
+        body,
+        signal: requestSignal(options.signal)
+      })
+    } catch (cause) {
+      if (options.signal?.aborted) {
+        throw new VinabotIntegrationError('操作已取消。', 499, 'ABORTED', { cause })
+      }
+      throw new VinabotIntegrationError(
+        '无法连接 VinaRouter，请检查网络后重试。',
+        502,
+        'UPSTREAM_UNREACHABLE',
+        { cause }
+      )
+    }
+    const payload = await readBoundedResponse(response)
+    if (!response.ok || payload?.success === false) {
+      const fallback = response.status === 401 || response.status === 403
+        ? '登录信息或权限无效。'
+        : `VinaRouter 请求失败（HTTP ${response.status}）。`
+      throw new VinabotIntegrationError(
+        safeMessage(payload?.message ?? payload?.error?.message, fallback),
+        response.status >= 400 && response.status < 500 ? response.status : 502,
+        'UPSTREAM_REJECTED'
+      )
+    }
+    return payload
+  }
+
+  async logout(accessToken, sid) {
+    if (typeof accessToken !== 'string' || accessToken.length === 0) return
+    const headers = new Headers({
+      accept: 'application/json',
+      authorization: `Bearer ${accessToken}`
+    })
+    if (typeof sid === 'string' && sid.length > 0) headers.set('x-auth-session', sid)
+    try {
+      const response = await this.fetch(`${VINABOT_ORIGIN}/api/user/auth/logout`, {
+        method: 'POST',
+        headers,
+        signal: AbortSignal.timeout(10_000)
+      })
+      await response.body?.cancel().catch(() => {})
+    } catch {
+      // Best effort: the short-lived panel token is never persisted locally.
+    }
+  }
+}
+
+function tokenItems(payload) {
+  const data = asObject(payload?.data)
+  return Array.isArray(data?.items) ? data.items : []
+}
+
+function newestEnabledToken(items, tokenName) {
+  return items
+    .filter((item) => item?.name === tokenName && item?.status === 1 && Number.isInteger(item?.id))
+    .sort((left, right) => right.id - left.id)[0]
+}
+
+function requireText(value, label, maxLength) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (text.length === 0) {
+    throw new VinabotIntegrationError(`请输入${label}。`, 400, 'INVALID_INPUT')
+  }
+  if (text.length > maxLength) {
+    throw new VinabotIntegrationError(`${label}过长。`, 400, 'INVALID_INPUT')
+  }
+  return text
+}
+
+/** Parse a small JSON request without allowing a browser to allocate an unbounded body. */
+async function readLocalJson(request) {
+  const declared = Number(request.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_LOCAL_BODY_BYTES) {
+    throw new VinabotIntegrationError('请求数据过大。', 413, 'REQUEST_TOO_LARGE')
+  }
+  const text = await request.text()
+  if (new TextEncoder().encode(text).byteLength > MAX_LOCAL_BODY_BYTES) {
+    throw new VinabotIntegrationError('请求数据过大。', 413, 'REQUEST_TOO_LARGE')
+  }
+  try {
+    return asObject(JSON.parse(text)) ?? {}
+  } catch (cause) {
+    throw new VinabotIntegrationError('请求不是有效的 JSON。', 400, 'INVALID_JSON', { cause })
+  }
+}
+
+function flowPresentation(flow) {
+  if (flow.stage === '2fa') {
+    return { ok: true, stage: '2fa', flowId: flow.id }
+  }
+  return {
+    ok: true,
+    stage: 'models',
+    flowId: flow.id,
+    displayName: flow.displayName,
+    models: flow.models.map((model) => ({
+      id: model.id,
+      name: model.name,
+      protocols: [...model.protocols]
+    }))
+  }
+}
+
+/**
+ * Stateful setup coordinator. Secrets live only in its Host-side flow map and
+ * are committed straight into the DSH credential provider on confirmation.
+ */
+export class VinabotIntegration {
+  constructor(ctx, options = {}) {
+    this.ctx = ctx
+    this.client = new VinabotClient(options.fetchImpl)
+    this.now = options.now ?? Date.now
+    this.uuid = options.randomUUID ?? randomUUID
+    const anonymousId = String(options.anonymousId ?? getOrCreateAnonymousUserId())
+    this.tokenName = `dsh-desktop-${anonymousId.replace(/-/gu, '').slice(0, 8)}`
+    this.flows = new Map()
+  }
+
+  async purgeExpiredFlows() {
+    const now = this.now()
+    const expired = [...this.flows.values()].filter((flow) => flow.expiresAt <= now)
+    for (const flow of expired) {
+      this.flows.delete(flow.id)
+      await this.client.logout(flow.accessToken, flow.sid)
+    }
+  }
+
+  createFlow(value) {
+    if (this.flows.size >= MAX_FLOWS) {
+      throw new VinabotIntegrationError('登录操作过多，请稍后重试。', 429, 'TOO_MANY_FLOWS')
+    }
+    const id = this.uuid()
+    const flow = {
+      id,
+      expiresAt: this.now() + FLOW_TTL_MS,
+      ...value
+    }
+    this.flows.set(id, flow)
+    return flow
+  }
+
+  requireFlow(flowId, expectedStage) {
+    const id = requireText(flowId, '登录流程标识', 128)
+    const flow = this.flows.get(id)
+    if (flow === undefined || flow.expiresAt <= this.now()) {
+      if (flow !== undefined) this.flows.delete(id)
+      throw new VinabotIntegrationError('登录已过期，请重新登录。', 410, 'FLOW_EXPIRED')
+    }
+    if (flow.stage !== expectedStage) {
+      throw new VinabotIntegrationError('登录流程状态无效，请重新登录。', 409, 'FLOW_STATE_INVALID')
+    }
+    return flow
+  }
+
+  async status() {
+    const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
+    const providers = asObject(section?.providers)
+    const profile = asObject(providers?.[VINABOT_PROVIDER])
+    let credentialConfigured = false
+    if (profile?.apiKeyEnv === VINABOT_CREDENTIAL_REF) {
+      try {
+        credentialConfigured = (await this.ctx.credentials.describe(
+          credentialRef(VINABOT_CREDENTIAL_REF)
+        )).configured === true
+      } catch {
+        credentialConfigured = false
+      }
+    }
+    const models = Array.isArray(profile?.models)
+      ? profile.models.flatMap((model) => {
+        const id = typeof model?.id === 'string' ? model.id : ''
+        return id.length === 0 ? [] : [{ id, name: model?.name ?? id }]
+      })
+      : []
+    const selected = this.ctx.agentDefaultModel.currentSelection()
+    return {
+      ok: true,
+      configured: profile !== undefined && credentialConfigured && models.length > 0,
+      credentialConfigured,
+      provider: VINABOT_PROVIDER,
+      displayName: profile?.displayName ?? 'VinaRouter',
+      baseURL: profile?.baseURL ?? VINABOT_API_BASE,
+      protocol: profile?.api,
+      models,
+      selected: selected?.provider === VINABOT_PROVIDER ? selected : undefined
+    }
+  }
+
+  async login(input, signal) {
+    await this.purgeExpiredFlows()
+    const username = requireText(input?.username, '用户名', 256)
+    const password = requireText(input?.password, '密码', 4096)
+    const platform = await this.client.request('/api/status', { signal })
+    if (platform?.data?.turnstile_check === true) {
+      throw new VinabotIntegrationError(
+        'VinaRouter 当前启用了人机验证，请先在网站登录并通过“手动配置”粘贴 API 密钥。',
+        409,
+        'TURNSTILE_REQUIRED'
+      )
+    }
+    const payload = await this.client.request('/api/user/login', {
+      method: 'POST',
+      body: { username, password },
+      signal
+    })
+    const data = asObject(payload?.data)
+    if (data?.require_2fa === true) {
+      const flowToken = requireText(data.flow_token, '两步验证流程令牌', 4096)
+      return flowPresentation(this.createFlow({ stage: '2fa', flowToken }))
+    }
+    return this.finishPanelLogin(data, signal)
+  }
+
+  async verifyTwoFactor(input, signal) {
+    await this.purgeExpiredFlows()
+    const flow = this.requireFlow(input?.flowId, '2fa')
+    const code = requireText(input?.code, '验证码', 128)
+    const payload = await this.client.request('/api/user/login/2fa', {
+      method: 'POST',
+      body: { flow_token: flow.flowToken, code },
+      signal
+    })
+    this.flows.delete(flow.id)
+    return this.finishPanelLogin(asObject(payload?.data), signal)
+  }
+
+  async finishPanelLogin(data, signal) {
+    const accessToken = requireText(data?.access_token, '登录令牌', 8192)
+    const sid = typeof data?.session?.sid === 'string' ? data.session.sid : undefined
+    const displayName = [data?.user?.display_name, data?.user?.username]
+      .find((value) => typeof value === 'string' && value.trim().length > 0)
+    const flow = this.createFlow({
+      stage: 'loading',
+      accessToken,
+      sid,
+      displayName: typeof displayName === 'string' ? displayName.trim() : undefined
+    })
+    try {
+      const searchPath = `/api/token/search?p=1&page_size=100&keyword=${encodeURIComponent(this.tokenName)}`
+      let search = await this.client.request(searchPath, { accessToken, signal })
+      let token = newestEnabledToken(tokenItems(search), this.tokenName)
+      if (token === undefined) {
+        await this.client.request('/api/token/', {
+          method: 'POST',
+          accessToken,
+          body: {
+            name: this.tokenName,
+            expired_time: -1,
+            unlimited_quota: true,
+            model_limits_enabled: false
+          },
+          signal
+        })
+        search = await this.client.request(searchPath, { accessToken, signal })
+        token = newestEnabledToken(tokenItems(search), this.tokenName)
+      }
+      if (token === undefined) {
+        throw new VinabotIntegrationError(
+          '已创建 API 令牌，但无法在令牌列表中找到它。',
+          502,
+          'TOKEN_NOT_FOUND'
+        )
+      }
+      const keyPayload = await this.client.request(`/api/token/${String(token.id)}/key`, {
+        method: 'POST',
+        accessToken,
+        signal
+      })
+      const apiKey = normalizeApiKey(keyPayload?.data?.key)
+      const modelPayload = await this.client.request('/v1/models', { apiKey, signal })
+      flow.stage = 'models'
+      flow.apiKey = apiKey
+      flow.models = normalizeModels(modelPayload)
+      flow.tokenId = token.id
+      return flowPresentation(flow)
+    } catch (error) {
+      this.flows.delete(flow.id)
+      await this.client.logout(accessToken, sid)
+      throw error
+    }
+  }
+
+  resolveProtocol(flow, selectedModel, requested) {
+    const allowed = new Set(['auto', 'openai-completions', 'openai-responses'])
+    const choice = typeof requested === 'string' ? requested : 'auto'
+    if (!allowed.has(choice)) {
+      throw new VinabotIntegrationError('API 协议无效。', 400, 'INVALID_PROTOCOL')
+    }
+    const discovered = flow.models.find((model) => model.id === selectedModel)
+    if (choice !== 'auto') {
+      if (discovered !== undefined && !discovered.protocols.includes(choice)) {
+        throw new VinabotIntegrationError(
+          '所选模型不支持这个 API 协议。',
+          400,
+          'PROTOCOL_UNSUPPORTED'
+        )
+      }
+      return choice
+    }
+    if (discovered?.protocols.includes('openai-completions')) return 'openai-completions'
+    if (discovered?.protocols.includes('openai-responses')) return 'openai-responses'
+    return 'openai-completions'
+  }
+
+  async configure(input) {
+    await this.purgeExpiredFlows()
+    const flow = this.requireFlow(input?.flowId, 'models')
+    const selectedModel = requireText(input?.model, '模型 ID', 512)
+    const protocol = this.resolveProtocol(flow, selectedModel, input?.protocol)
+    const discovered = flow.models.find((model) => model.id === selectedModel)
+    const compatible = flow.models
+      .filter((model) => model.protocols.includes(protocol))
+      .map((model) => ({ id: model.id, ...(model.name === model.id ? {} : { name: model.name }) }))
+    if (discovered === undefined) compatible.unshift({ id: selectedModel })
+    const models = [...new Map(compatible.map((model) => [model.id, model])).values()]
+    const profile = {
+      displayName: 'VinaRouter',
+      apiKeyEnv: VINABOT_CREDENTIAL_REF,
+      api: protocol,
+      baseURL: VINABOT_API_BASE,
+      models
+    }
+    const ref = credentialRef(VINABOT_CREDENTIAL_REF)
+    const credentialInfo = await this.ctx.credentials.describe(ref)
+    if (!credentialInfo.writable) {
+      throw new VinabotIntegrationError(
+        'VINABOT_API_KEY 当前由只读来源提供，无法通过客户端替换。',
+        409,
+        'CREDENTIAL_READ_ONLY'
+      )
+    }
+    const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
+    const previous = asObject(asObject(section?.providers)?.[VINABOT_PROVIDER])
+    await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, [{
+      op: 'set',
+      path: ['providers', VINABOT_PROVIDER],
+      value: profile
+    }])
+    try {
+      await this.ctx.credentials.set(ref, flow.apiKey)
+    } catch (cause) {
+      const rollback = previous === undefined
+        ? { op: 'unset', path: ['providers', VINABOT_PROVIDER] }
+        : { op: 'set', path: ['providers', VINABOT_PROVIDER], value: previous }
+      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, [rollback]).catch(() => {})
+      throw new VinabotIntegrationError(
+        '模型配置已回滚，因为 API 密钥无法保存。',
+        500,
+        'CREDENTIAL_WRITE_FAILED',
+        { cause }
+      )
+    }
+    let warning
+    try {
+      await this.ctx.agentDefaultModel.saveSelection({
+        provider: VINABOT_PROVIDER,
+        model: selectedModel
+      })
+    } catch {
+      warning = 'VinaRouter 已接入，但默认模型未能保存；请在聊天输入框中手动选择一次。'
+    }
+    this.flows.delete(flow.id)
+    await this.client.logout(flow.accessToken, flow.sid)
+    return {
+      ok: true,
+      configured: true,
+      provider: VINABOT_PROVIDER,
+      model: selectedModel,
+      protocol,
+      modelCount: models.length,
+      warning
+    }
+  }
+
+  async cancel(input) {
+    await this.purgeExpiredFlows()
+    const flowId = typeof input?.flowId === 'string' ? input.flowId : ''
+    const flow = this.flows.get(flowId)
+    if (flow !== undefined) {
+      this.flows.delete(flowId)
+      await this.client.logout(flow.accessToken, flow.sid)
+    }
+    return { ok: true }
+  }
+
+  async dispose() {
+    const flows = [...this.flows.values()]
+    this.flows.clear()
+    await Promise.all(flows.map((flow) => this.client.logout(flow.accessToken, flow.sid)))
+  }
+}
+
+function errorResponse(error) {
+  const expected = error instanceof VinabotIntegrationError
+  return Response.json({
+    ok: false,
+    code: expected ? error.code : 'INTERNAL_ERROR',
+    error: expected ? error.message : 'VinaRouter 集成发生内部错误。'
+  }, {
+    status: expected ? error.status : 500,
+    headers: { 'cache-control': 'no-store' }
+  })
+}
+
+function registerJsonRoute(connection, path, methods, handler) {
+  connection.fetch.register({
+    path,
+    methods,
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      try {
+        return Response.json(await handler(request), {
+          headers: { 'cache-control': 'no-store' }
+        })
+      } catch (error) {
+        return errorResponse(error)
+      }
+    }
+  })
+}
+
+/** Register the setup API on the authenticated same-origin DSH connection. */
+export function apply(ctx) {
+  const integration = new VinabotIntegration(ctx)
+  const connection = Reflect.get(ctx, 'connection')
+
+  registerJsonRoute(connection, STATUS_PATH, ['GET'], () => integration.status())
+  registerJsonRoute(connection, LOGIN_PATH, ['POST'], async (request) => {
+    return integration.login(await readLocalJson(request), request.signal)
+  })
+  registerJsonRoute(connection, TWO_FACTOR_PATH, ['POST'], async (request) => {
+    return integration.verifyTwoFactor(await readLocalJson(request), request.signal)
+  })
+  registerJsonRoute(connection, CONFIGURE_PATH, ['POST'], async (request) => {
+    return integration.configure(await readLocalJson(request))
+  })
+  registerJsonRoute(connection, CANCEL_PATH, ['POST'], async (request) => {
+    return integration.cancel(await readLocalJson(request))
+  })
+
+  ctx.effect(() => () => integration.dispose())
+}

@@ -1,0 +1,164 @@
+# DSH Desktop 接入 VinaRouter
+
+本文记录 `product/v0.9.0` 分支内置 VinaRouter（`https://router.vinabot.ai`）的实现、用户操作和维护注意事项。
+
+## 目标
+
+用户不需要理解 OpenAI 兼容配置，也不需要手动复制 API 密钥。首次启动或打开「设置 → VinaRouter」后，只需：
+
+1. 输入 VinaRouter 用户名和密码；
+2. 账号启用两步验证时输入 TOTP 或备用码；
+3. 从可用模型列表中选择模型，或者手动填写模型 ID；
+4. 保存并开始使用。
+
+DSH Desktop 会自动查找或创建本机专用 API Token、读取模型列表、写入模型提供方配置并选择默认模型。
+
+## 用户操作
+
+### 首次接入
+
+1. 启动 DSH Desktop。
+2. 在「连接 VinaRouter」窗口输入中转站用户名和密码。
+3. 如出现「两步验证」，输入身份验证器验证码或备用码。
+4. 搜索并选择模型。列表为空或目标模型尚未公开时，点击「手动填写模型」。
+5. API 协议通常保持「自动推荐」：
+   - 支持 `openai` 的模型优先使用 Chat Completions；
+   - 只支持 `openai-response` 的模型自动使用 Responses API。
+6. 点击「保存并开始使用」。
+
+完成后，当前模型会成为 DSH 默认模型。相同协议的其他可用文本模型也会进入 DSH 模型选择器。
+
+### 重新配置
+
+1. 打开「设置 → VinaRouter」。
+2. 点击「重新登录并配置」。
+3. 重新登录并选择模型。
+
+重新配置会更新 `vinabot` 提供方和 `VINABOT_API_KEY` 凭据，不会把密码或面板登录令牌写入磁盘。
+
+### 临时手动配置
+
+自动登录不可用时，仍可通过「设置 → 模型 → 添加自定义提供方」验证中转站：
+
+```text
+Provider ID: vinabot
+显示名称: VinaRouter
+API 地址: https://router.vinabot.ai/v1
+API 协议: openai-completions
+API 密钥: sk-<API Token>
+模型: 点击“获取可用模型”，或手动添加模型 ID
+```
+
+## 接口流程
+
+Host 插件按照中转站文档调用下列接口：
+
+```text
+GET  /api/status
+POST /api/user/login
+POST /api/user/login/2fa           # 仅启用 2FA 时
+GET  /api/token/search
+POST /api/token/                   # 没有本机令牌时
+POST /api/token/:id/key
+GET  /v1/models
+POST /api/user/auth/logout
+```
+
+令牌名称为：
+
+```text
+dsh-desktop-<DSH 匿名设备标识前 8 位>
+```
+
+匿名设备标识是 DSH Home 内随机生成的 UUID，不根据用户名、主机名、IP 或硬件信息生成。
+
+`POST /api/token/:id/key` 返回的原始密钥不带 `sk-`。插件会在保存前补齐前缀，并避免重复添加。
+
+## DSH 配置结果
+
+模型配置写入 `llm-pi-ai` 命名空间，等价结构如下：
+
+```yaml
+llm-pi-ai:
+  providers:
+    vinabot:
+      displayName: VinaRouter
+      apiKeyEnv: VINABOT_API_KEY
+      api: openai-completions
+      baseURL: https://router.vinabot.ai/v1
+      models:
+        - id: example-model
+```
+
+API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储。默认模型通过 `ctx.agentDefaultModel.saveSelection()` 保存。
+
+## 模型和协议策略
+
+`GET /v1/models` 返回的 `supported_endpoint_types` 用来判断模型能否作为 DSH 文本 Agent：
+
+| VinaRouter EndpointType | DSH 协议 | 处理方式 |
+| --- | --- | --- |
+| `openai` | `openai-completions` | 支持，自动推荐 |
+| `openai-response` | `openai-responses` | 支持，模型没有 `openai` 时自动使用 |
+| 图片、视频、Embedding、Rerank 等 | 不适用 | 不显示在该接入向导中 |
+
+一个 DSH 提供方配置只有一个路由级 API 协议。因此保存时只写入与所选协议兼容的模型。需要同时使用 Chat Completions 和 Responses 专属模型时，应分别建立两个提供方配置；首版向导以当前选中模型对应的协议为准。
+
+手动填写的模型无法提前判断端点能力，默认使用 `openai-completions`，也可以在界面明确选择 `openai-responses`。
+
+## 安全边界
+
+- 用户名和密码只存在于本次请求和组件状态中；成功提交后立即清空密码。
+- 面板 `access_token`、2FA `flow_token` 和模型 API Token 只保存在 Host 内存流程中，不返回给浏览器。
+- 浏览器只收到流程 ID、用户显示名称和已脱敏的模型信息。
+- API Token 只通过 DSH `credentials` 服务落盘。
+- 所有本地接入路由挂在 DSH 的认证连接上，并返回 `Cache-Control: no-store`。
+- 完成、取消、失败或插件退出时，插件尽力调用 `/api/user/auth/logout` 撤销临时面板会话。
+- 上游响应体和密钥不会写入日志。
+- 登录流程十分钟过期，Host 同时最多保留 16 个流程。
+
+当前接入不保存 Refresh Cookie，也不自动刷新面板会话。面板登录只用于完成一次配置，模型调用长期使用专用 API Token。
+
+## Turnstile
+
+每次登录前插件会读取 `/api/status`。当 `turnstile_check=true` 时，纯 API 登录不能安全绕过验证，向导会停止并提示用户通过网站登录和手动配置。
+
+如需在启用 Turnstile 后继续保持全自动体验，应在 VinaRouter 后端新增桌面授权/设备码流程，而不是把 Turnstile 私钥或绕过逻辑放进客户端。
+
+## 代码位置
+
+- Host 集成：`packages/dsh-desktop-vinabot/index.js`
+- 客户端向导和设置页：`packages/dsh-desktop-vinabot/client.js`
+- 组合入口：`build/dsh-desktop.patch.yml`
+- 自动化测试：`test/vinabot-integration.test.ts`
+
+## 验证命令
+
+Windows PowerShell 中优先使用 `npm.cmd`，避免本机执行策略拦截 `npm.ps1`：
+
+```powershell
+npm.cmd test -- --testTimeout=15000
+npm.cmd run typecheck
+npm.cmd run build
+npm.cmd run dev
+```
+
+修改插件后应重启开发客户端；热更新不会重新加载 Host 插件。
+
+### 2026-09-10 验证记录
+
+- VinaRouter 定向测试：6 项通过；
+- 完整测试：755 项通过、2 项跳过；
+- TypeScript 类型检查和生产构建通过；
+- 使用全新临时 `DSH_HOME` 启动真实 Harness 成功；
+- 完成浏览器认证后，`GET /api/dsh-desktop/vinabot/status` 返回 HTTP 200；
+- 首次配置弹窗实际渲染出用户名、密码、网站入口、稍后配置和登录按钮。
+
+真实账号验收时还需确认：
+
+1. 普通登录能够创建或复用 `dsh-desktop-*` Token；
+2. 2FA 登录能够进入模型选择；
+3. API 密钥不出现在浏览器响应、日志和 `settings.yaml`；
+4. Chat Completions 模型可以进行流式回复和工具调用；
+5. Responses-only 模型会自动保存为 `openai-responses`；
+6. 再次启动客户端后无需重新登录即可调用已保存模型。
