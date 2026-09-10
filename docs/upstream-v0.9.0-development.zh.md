@@ -182,4 +182,6 @@ git diff --stat base/dataelement-v0.9.0-2a847f2...product/v0.9.0
 - `npm ci` 成功，所有 `@deepseek-ai/dsh@0.1.5-rc.1` 补丁成功应用。npm 同时报告 4 个高危依赖审计项和 9 个待审核安装脚本，需要单独进行供应链评估。
 - `npm run typecheck` 通过。
 - `npm run build` 通过。
-- `npm test` 完成 751 个测试：741 个通过、8 个失败、2 个跳过。8 个失败均来自发布说明测试调用不到可用的 `python3`；当前 Windows `python3.exe` 只是 Microsoft Store 执行别名。安装 Python 3 并确保 `python3` 位于 `PATH` 后，应重新运行完整测试。
+- 首次 `npm test` 完成 751 个测试：741 个通过、8 个失败、2 个跳过。8 个失败均来自发布说明测试调用不到可用的 `python3`。
+- 安装 Python 3.14.7 后，`python3 --version` 和发布说明测试均可正常运行。Windows 全量并发测试仍有两个慢用例超过默认 5 秒超时；使用 `npm test -- --testTimeout=15000` 复验后，749 个测试通过、2 个跳过、0 个失败。
+- 在当前 Windows 开发环境中，如果默认 `npm test` 仅出现超时失败，可使用 15 秒超时复验；不能用提高超时掩盖断言失败、进程崩溃或功能错误。
