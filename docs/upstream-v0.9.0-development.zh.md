@@ -185,3 +185,14 @@ git diff --stat base/dataelement-v0.9.0-2a847f2...product/v0.9.0
 - 首次 `npm test` 完成 751 个测试：741 个通过、8 个失败、2 个跳过。8 个失败均来自发布说明测试调用不到可用的 `python3`。
 - 安装 Python 3.14.7 后，`python3 --version` 和发布说明测试均可正常运行。Windows 全量并发测试仍有两个慢用例超过默认 5 秒超时；使用 `npm test -- --testTimeout=15000` 复验后，749 个测试通过、2 个跳过、0 个失败。
 - 在当前 Windows 开发环境中，如果默认 `npm test` 仅出现超时失败，可使用 15 秒超时复验；不能用提高超时掩盖断言失败、进程崩溃或功能错误。
+
+## 当前产品分支的临时兼容措施
+
+2026-09-10，`dsh-ppt-composer@0.1.1-rc.2` 在 Harness 0.1.5 启动时因缺少 `webServer` 注入而导致整个正常 Profile 无法启动。`product/v0.9.0` 暂时从 `build/dsh-desktop.patch.yml` 的正常组合中移除了该插件：
+
+- PPT 核心、Composer 包、模板和素材仍保留在依赖及仓库中，没有删除用户数据。
+- 正常模式和新建 Profile 不再挂载 PPT Composer，因此客户端可以启动，但 PPT 功能不可用。
+- Safe Mode 保持原有隔离行为。
+- 只有在 PPT 包正确声明并验证 `webServer` 注入、正常启动回归测试通过后，才重新加入 `dsh-ppt-composer` Entry。
+
+禁用后的验证结果：PPT 组合与 Safe Mode 关键测试 12 项通过；完整测试使用 15 秒超时后 749 项通过、2 项跳过；类型检查和生产构建通过；真实开发客户端正常启动到 Harness Web UI。

@@ -55,8 +55,9 @@ registerHooks({ resolve(specifier, context, next) {
     expect(recovered.snapshot().phase, recovered.snapshot().logs.join('\n')).toBe('ready')
     expect(recovered.snapshot().authToken).toBeTruthy()
     expect((await fetch(recovered.snapshot().url!)).status).toBe(401)
-    // Recovery uses its own overlay and never edits the normal composition.
-    expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')
+    // Recovery uses its own overlay and never edits the normal composition,
+    // where the incompatible PPT adapter remains intentionally unmounted.
+    expect(await readFile(normalPatch, 'utf8')).not.toContain('name: \'dsh-ppt-composer\'')
   } finally {
     await broken.stop()
     await recovered.stop()
