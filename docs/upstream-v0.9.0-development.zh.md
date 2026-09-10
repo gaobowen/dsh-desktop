@@ -172,3 +172,14 @@ git merge-base product/v0.9.0 upstream/v0.9.0
 git log --oneline --decorate base/dataelement-v0.9.0-2a847f2..product/v0.9.0
 git diff --stat base/dataelement-v0.9.0-2a847f2...product/v0.9.0
 ```
+
+## 2026-09-10 初始执行记录
+
+- 已添加 `upstream`，地址为 `https://github.com/dataelement/dsh-desktop.git`。
+- 已获取上游分支和标签；执行时 `upstream/v0.9.0` 比 `upstream/main` 领先 3 个提交、落后 0 个提交。
+- 已从 `2a847f2` 创建并推送 `product/v0.9.0`。
+- 已创建并推送轻量标签 `base/dataelement-v0.9.0-2a847f2`，标签指向 `2a847f2`。
+- `npm ci` 成功，所有 `@deepseek-ai/dsh@0.1.5-rc.1` 补丁成功应用。npm 同时报告 4 个高危依赖审计项和 9 个待审核安装脚本，需要单独进行供应链评估。
+- `npm run typecheck` 通过。
+- `npm run build` 通过。
+- `npm test` 完成 751 个测试：741 个通过、8 个失败、2 个跳过。8 个失败均来自发布说明测试调用不到可用的 `python3`；当前 Windows `python3.exe` 只是 Microsoft Store 执行别名。安装 Python 3 并确保 `python3` 位于 `PATH` 后，应重新运行完整测试。
