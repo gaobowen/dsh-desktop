@@ -12,8 +12,16 @@ export const inject = ['connection', 'settings', 'credentials', 'agentDefaultMod
 export const VINABOT_ORIGIN = 'https://router.vinabot.ai'
 export const VINABOT_API_BASE = `${VINABOT_ORIGIN}/v1`
 export const VINABOT_PROVIDER = 'vinabot'
+export const VINABOT_ANTHROPIC_PROVIDER = 'vinabot-anthropic'
+export const VINABOT_CHAT_PROVIDER = 'vinabot-chat'
 export const VINABOT_CREDENTIAL_REF = 'VINABOT_API_KEY'
 export const VINABOT_SETTINGS_NAMESPACE = 'llm-pi-ai'
+
+export const VINABOT_PROVIDER_BY_PROTOCOL = Object.freeze({
+  'openai-responses': VINABOT_PROVIDER,
+  'anthropic-messages': VINABOT_ANTHROPIC_PROVIDER,
+  'openai-completions': VINABOT_CHAT_PROVIDER
+})
 
 export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
 export const LOGIN_PATH = '/api/dsh-desktop/vinabot/login'
@@ -53,18 +61,39 @@ export function normalizeApiKey(value) {
   return key.startsWith('sk-') ? key : `sk-${key}`
 }
 
-/** Map NewAPI endpoint identifiers into the two text protocols DSH can use here. */
+export function isClaudeModel(model) {
+  const id = typeof model?.id === 'string' ? model.id : ''
+  const names = [model?.name, model?.display_name, model?.displayName]
+    .filter((value) => typeof value === 'string')
+    .join(' ')
+  return `${id} ${names}`.toLowerCase().includes('claude')
+}
+
+/** Map NewAPI endpoint identifiers into the text protocols DSH can use here. */
 export function protocolsOfModel(model) {
   const endpoints = Array.isArray(model?.supported_endpoint_types)
     ? model.supported_endpoint_types
     : []
   const protocols = []
-  if (endpoints.includes('openai')) protocols.push('openai-completions')
   if (endpoints.includes('openai-response')) protocols.push('openai-responses')
+  if (endpoints.includes('anthropic') || isClaudeModel(model)) protocols.push('anthropic-messages')
+  if (endpoints.includes('openai')) protocols.push('openai-completions')
   return protocols
 }
 
-/** Keep only text models that can drive the DSH agent over an OpenAI wire protocol. */
+/** Prefer native reasoning/tool protocols, with Claude routed through Messages. */
+export function recommendedProtocol(model) {
+  const protocols = Array.isArray(model?.protocols) ? model.protocols : protocolsOfModel(model)
+  if (isClaudeModel(model) && protocols.includes('anthropic-messages')) {
+    return 'anthropic-messages'
+  }
+  if (protocols.includes('openai-responses')) return 'openai-responses'
+  if (protocols.includes('anthropic-messages')) return 'anthropic-messages'
+  if (protocols.includes('openai-completions')) return 'openai-completions'
+  return isClaudeModel(model) ? 'anthropic-messages' : 'openai-responses'
+}
+
+/** Keep only text models that can drive the DSH agent over a supported wire protocol. */
 export function normalizeModels(payload) {
   const rows = Array.isArray(payload?.data) ? payload.data : []
   const seen = new Set()
@@ -300,9 +329,12 @@ export class VinabotIntegration {
   async status() {
     const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
     const providers = asObject(section?.providers)
-    const profile = asObject(providers?.[VINABOT_PROVIDER])
+    const profiles = Object.values(VINABOT_PROVIDER_BY_PROTOCOL).flatMap((provider) => {
+      const profile = asObject(providers?.[provider])
+      return profile === undefined ? [] : [{ provider, profile }]
+    })
     let credentialConfigured = false
-    if (profile?.apiKeyEnv === VINABOT_CREDENTIAL_REF) {
+    if (profiles.some(({ profile }) => profile.apiKeyEnv === VINABOT_CREDENTIAL_REF)) {
       try {
         credentialConfigured = (await this.ctx.credentials.describe(
           credentialRef(VINABOT_CREDENTIAL_REF)
@@ -311,23 +343,32 @@ export class VinabotIntegration {
         credentialConfigured = false
       }
     }
-    const models = Array.isArray(profile?.models)
+    const models = profiles.flatMap(({ provider, profile }) => Array.isArray(profile.models)
       ? profile.models.flatMap((model) => {
         const id = typeof model?.id === 'string' ? model.id : ''
-        return id.length === 0 ? [] : [{ id, name: model?.name ?? id }]
+        return id.length === 0 ? [] : [{
+          id,
+          name: model?.name ?? id,
+          provider,
+          protocol: profile.api
+        }]
       })
-      : []
+      : [])
     const selected = this.ctx.agentDefaultModel.currentSelection()
+    const selectedProfile = profiles.find(({ provider }) => provider === selected?.provider)?.profile
+    const firstProfile = profiles[0]?.profile
     return {
       ok: true,
-      configured: profile !== undefined && credentialConfigured && models.length > 0,
+      configured: profiles.length > 0 && credentialConfigured && models.length > 0,
       credentialConfigured,
-      provider: VINABOT_PROVIDER,
-      displayName: profile?.displayName ?? 'VinaRouter',
-      baseURL: profile?.baseURL ?? VINABOT_API_BASE,
-      protocol: profile?.api,
+      provider: profiles.some(({ provider }) => provider === selected?.provider)
+        ? selected.provider
+        : VINABOT_PROVIDER,
+      displayName: selectedProfile?.displayName ?? firstProfile?.displayName ?? 'VinaRouter',
+      baseURL: selectedProfile?.baseURL ?? firstProfile?.baseURL ?? VINABOT_API_BASE,
+      protocol: selectedProfile?.api ?? firstProfile?.api,
       models,
-      selected: selected?.provider === VINABOT_PROVIDER ? selected : undefined
+      selected: profiles.some(({ provider }) => provider === selected?.provider) ? selected : undefined
     }
   }
 
@@ -426,7 +467,12 @@ export class VinabotIntegration {
   }
 
   resolveProtocol(flow, selectedModel, requested) {
-    const allowed = new Set(['auto', 'openai-completions', 'openai-responses'])
+    const allowed = new Set([
+      'auto',
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages'
+    ])
     const choice = typeof requested === 'string' ? requested : 'auto'
     if (!allowed.has(choice)) {
       throw new VinabotIntegrationError('API 协议无效。', 400, 'INVALID_PROTOCOL')
@@ -442,28 +488,65 @@ export class VinabotIntegration {
       }
       return choice
     }
-    if (discovered?.protocols.includes('openai-completions')) return 'openai-completions'
-    if (discovered?.protocols.includes('openai-responses')) return 'openai-responses'
-    return 'openai-completions'
+    return recommendedProtocol(discovered ?? { id: selectedModel, name: selectedModel, protocols: [] })
   }
 
   async configure(input) {
     await this.purgeExpiredFlows()
     const flow = this.requireFlow(input?.flowId, 'models')
-    const selectedModel = requireText(input?.model, '模型 ID', 512)
-    const protocol = this.resolveProtocol(flow, selectedModel, input?.protocol)
-    const discovered = flow.models.find((model) => model.id === selectedModel)
-    const compatible = flow.models
-      .filter((model) => model.protocols.includes(protocol))
-      .map((model) => ({ id: model.id, ...(model.name === model.id ? {} : { name: model.name }) }))
-    if (discovered === undefined) compatible.unshift({ id: selectedModel })
-    const models = [...new Map(compatible.map((model) => [model.id, model])).values()]
-    const profile = {
-      displayName: 'VinaRouter',
-      apiKeyEnv: VINABOT_CREDENTIAL_REF,
-      api: protocol,
-      baseURL: VINABOT_API_BASE,
-      models
+    const rawSelections = Array.isArray(input?.selections)
+      ? input.selections
+      : [{ model: input?.model, protocol: input?.protocol }]
+    if (rawSelections.length === 0) {
+      throw new VinabotIntegrationError('请至少选择一个模型。', 400, 'NO_MODELS_SELECTED')
+    }
+    if (rawSelections.length > 100) {
+      throw new VinabotIntegrationError('一次最多选择 100 个模型。', 400, 'TOO_MANY_MODELS')
+    }
+    const seen = new Set()
+    const selections = rawSelections.map((raw) => {
+      const selectedModel = requireText(raw?.model, '模型 ID', 512)
+      if (seen.has(selectedModel)) {
+        throw new VinabotIntegrationError('模型选择中存在重复项。', 400, 'DUPLICATE_MODEL')
+      }
+      seen.add(selectedModel)
+      const discovered = flow.models.find((model) => model.id === selectedModel)
+      return {
+        model: selectedModel,
+        protocol: this.resolveProtocol(flow, selectedModel, raw?.protocol),
+        name: discovered?.name ?? selectedModel
+      }
+    })
+    const defaultModel = requireText(input?.defaultModel ?? selections[0]?.model, '默认模型', 512)
+    const defaultSelection = selections.find((selection) => selection.model === defaultModel)
+    if (defaultSelection === undefined) {
+      throw new VinabotIntegrationError('默认模型必须包含在已选模型中。', 400, 'DEFAULT_NOT_SELECTED')
+    }
+    const grouped = new Map()
+    for (const selection of selections) {
+      const list = grouped.get(selection.protocol) ?? []
+      list.push({
+        id: selection.model,
+        ...(selection.name === selection.model ? {} : { name: selection.name })
+      })
+      grouped.set(selection.protocol, list)
+    }
+    const profiles = new Map()
+    for (const [protocol, models] of grouped) {
+      const provider = VINABOT_PROVIDER_BY_PROTOCOL[protocol]
+      if (provider === undefined) {
+        throw new VinabotIntegrationError('API 协议无效。', 400, 'INVALID_PROTOCOL')
+      }
+      const protocolLabel = protocol === 'openai-responses'
+        ? 'Responses'
+        : protocol === 'anthropic-messages' ? 'Anthropic' : 'Chat Completions'
+      profiles.set(provider, {
+        displayName: `VinaRouter · ${protocolLabel}`,
+        apiKeyEnv: VINABOT_CREDENTIAL_REF,
+        api: protocol,
+        baseURL: VINABOT_API_BASE,
+        models
+      })
     }
     const ref = credentialRef(VINABOT_CREDENTIAL_REF)
     const credentialInfo = await this.ctx.credentials.describe(ref)
@@ -475,19 +558,32 @@ export class VinabotIntegration {
       )
     }
     const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
-    const previous = asObject(asObject(section?.providers)?.[VINABOT_PROVIDER])
-    await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, [{
-      op: 'set',
-      path: ['providers', VINABOT_PROVIDER],
-      value: profile
-    }])
+    const providers = asObject(section?.providers)
+    const managedProviders = Object.values(VINABOT_PROVIDER_BY_PROTOCOL)
+    const previous = new Map(managedProviders.map((provider) => [
+      provider,
+      asObject(providers?.[provider])
+    ]))
+    const operations = managedProviders.flatMap((provider) => {
+      const profile = profiles.get(provider)
+      if (profile !== undefined) {
+        return [{ op: 'set', path: ['providers', provider], value: profile }]
+      }
+      return previous.get(provider) === undefined
+        ? []
+        : [{ op: 'unset', path: ['providers', provider] }]
+    })
+    await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations)
     try {
       await this.ctx.credentials.set(ref, flow.apiKey)
     } catch (cause) {
-      const rollback = previous === undefined
-        ? { op: 'unset', path: ['providers', VINABOT_PROVIDER] }
-        : { op: 'set', path: ['providers', VINABOT_PROVIDER], value: previous }
-      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, [rollback]).catch(() => {})
+      const rollback = managedProviders.map((provider) => {
+        const profile = previous.get(provider)
+        return profile === undefined
+          ? { op: 'unset', path: ['providers', provider] }
+          : { op: 'set', path: ['providers', provider], value: profile }
+      })
+      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, rollback).catch(() => {})
       throw new VinabotIntegrationError(
         '模型配置已回滚，因为 API 密钥无法保存。',
         500,
@@ -496,10 +592,11 @@ export class VinabotIntegration {
       )
     }
     let warning
+    const defaultProvider = VINABOT_PROVIDER_BY_PROTOCOL[defaultSelection.protocol]
     try {
       await this.ctx.agentDefaultModel.saveSelection({
-        provider: VINABOT_PROVIDER,
-        model: selectedModel
+        provider: defaultProvider,
+        model: defaultModel
       })
     } catch {
       warning = 'VinaRouter 已接入，但默认模型未能保存；请在聊天输入框中手动选择一次。'
@@ -509,10 +606,11 @@ export class VinabotIntegration {
     return {
       ok: true,
       configured: true,
-      provider: VINABOT_PROVIDER,
-      model: selectedModel,
-      protocol,
-      modelCount: models.length,
+      provider: defaultProvider,
+      model: defaultModel,
+      protocol: defaultSelection.protocol,
+      modelCount: selections.length,
+      providerCount: profiles.size,
       warning
     }
   }

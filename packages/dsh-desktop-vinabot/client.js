@@ -33,16 +33,21 @@ window.__ModuleLoader__.load({
       verifying: '正在验证…',
       welcome: '已登录：{name}',
       modelTitle: '选择模型',
-      modelHint: '列表已过滤为 DSH 可使用的文本模型。也可以直接填写中转站接受的模型 ID。',
+      modelHint: '可以同时选择多个文本模型，并为每个模型确认 API 协议。普通模型优先 Responses，Claude 优先 Anthropic。',
       search: '搜索模型',
       noModels: '中转站没有返回兼容的文本模型，请手动填写模型 ID。',
       manual: '手动填写模型',
       chooseList: '从列表选择',
       modelId: '模型 ID',
+      selectedCount: '已选择 {count} 个模型',
+      selectVisible: '选择当前结果',
+      clearSelection: '清空选择',
+      defaultModel: '默认模型',
       protocol: 'API 协议',
       protocolAuto: '自动推荐',
       protocolChat: 'Chat Completions（兼容性优先）',
       protocolResponses: 'Responses API',
+      protocolAnthropic: 'Anthropic API',
       connect: '保存并开始使用',
       connecting: '正在保存…',
       skip: '稍后配置',
@@ -76,17 +81,22 @@ window.__ModuleLoader__.load({
       verify: 'Verify',
       verifying: 'Verifying…',
       welcome: 'Signed in as {name}',
-      modelTitle: 'Choose a model',
-      modelHint: 'Only compatible text models are listed. You can also enter any model ID accepted by the gateway.',
+      modelTitle: 'Choose models',
+      modelHint: 'Select multiple text models and confirm the API protocol for each. Responses is preferred normally; Claude prefers Anthropic.',
       search: 'Search models',
       noModels: 'The gateway returned no compatible text models. Enter a model ID manually.',
       manual: 'Enter model ID',
       chooseList: 'Choose from list',
       modelId: 'Model ID',
+      selectedCount: '{count} models selected',
+      selectVisible: 'Select visible',
+      clearSelection: 'Clear selection',
+      defaultModel: 'Default model',
       protocol: 'API protocol',
       protocolAuto: 'Recommended automatically',
       protocolChat: 'Chat Completions (most compatible)',
       protocolResponses: 'Responses API',
+      protocolAnthropic: 'Anthropic API',
       connect: 'Save and start using',
       connecting: 'Saving…',
       skip: 'Configure later',
@@ -108,6 +118,27 @@ window.__ModuleLoader__.load({
       return navigator.language.toLowerCase().startsWith('zh') ? zh : en
     }
 
+    function isClaudeModel(model) {
+      return `${model?.id ?? ''} ${model?.name ?? ''}`.toLowerCase().includes('claude')
+    }
+
+    function recommendedProtocol(model) {
+      const protocols = Array.isArray(model?.protocols) ? model.protocols : []
+      if (isClaudeModel(model) && protocols.includes('anthropic-messages')) {
+        return 'anthropic-messages'
+      }
+      if (protocols.includes('openai-responses')) return 'openai-responses'
+      if (protocols.includes('anthropic-messages')) return 'anthropic-messages'
+      if (protocols.includes('openai-completions')) return 'openai-completions'
+      return isClaudeModel(model) ? 'anthropic-messages' : 'openai-responses'
+    }
+
+    function protocolLabel(protocol, t) {
+      if (protocol === 'anthropic-messages') return t.protocolAnthropic
+      if (protocol === 'openai-completions') return t.protocolChat
+      return t.protocolResponses
+    }
+
     function installStyles() {
       if (document.getElementById(STYLE_ID)) return
       const style = document.createElement('style')
@@ -127,8 +158,15 @@ window.__ModuleLoader__.load({
         .dshVinabotInput,.dshVinabotSelect{box-sizing:border-box;width:100%;height:40px;padding:0 12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:9px;font:inherit;font-size:14px;outline:none}
         .dshVinabotInput:focus,.dshVinabotSelect:focus{border-color:var(--dsw-alias-border-l3);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-border-l3) 35%,transparent)}
         .dshVinabotInput:disabled,.dshVinabotSelect:disabled{opacity:.56}
-        .dshVinabotModelSelect{height:auto;min-height:168px;padding:5px}
-        .dshVinabotModelSelect option{padding:8px 9px;border-radius:6px}
+        .dshVinabotModelList{box-sizing:border-box;max-height:310px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}
+        .dshVinabotModelRow{box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) minmax(175px,220px);gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+        .dshVinabotModelRow:last-child{border-bottom:0}
+        .dshVinabotModelChoice{display:flex;align-items:flex-start;gap:10px;min-width:0;cursor:pointer}
+        .dshVinabotModelChoice input{margin-top:3px;accent-color:var(--dsw-alias-button-primary-fill)}
+        .dshVinabotModelText{display:flex;flex-direction:column;min-width:0}
+        .dshVinabotModelName{font-size:14px;line-height:20px;overflow-wrap:anywhere}
+        .dshVinabotModelId{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+        .dshVinabotModelTools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
         .dshVinabotActions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px;padding-top:2px}
         .dshVinabotButton{box-sizing:border-box;min-height:36px;padding:7px 16px;border:1px solid transparent;border-radius:18px;font:inherit;font-size:14px;font-weight:500;cursor:pointer}
         .dshVinabotPrimary{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill)}
@@ -149,7 +187,7 @@ window.__ModuleLoader__.load({
         .dshVinabotFacts dd{margin:0;overflow-wrap:anywhere}
         .dshVinabotToggle{align-self:flex-start;border:0;background:transparent;color:var(--dsw-alias-label-secondary);padding:0;font:inherit;font-size:13px;text-decoration:underline;cursor:pointer}
         .dshVinabotSignedIn{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
-        @media (width<=560px){.dshVinabotModalBody{padding:24px}.dshVinabotCard{padding:18px}.dshVinabotActions{align-items:stretch;flex-direction:column-reverse}.dshVinabotButton{width:100%}.dshVinabotFacts{grid-template-columns:1fr;gap:2px}.dshVinabotFacts dd{margin-bottom:8px}}
+        @media (width<=560px){.dshVinabotModalBody{padding:24px}.dshVinabotCard{padding:18px}.dshVinabotActions{align-items:stretch;flex-direction:column-reverse}.dshVinabotButton{width:100%}.dshVinabotFacts{grid-template-columns:1fr;gap:2px}.dshVinabotFacts dd{margin-bottom:8px}.dshVinabotModelRow{grid-template-columns:1fr}.dshVinabotModelTools{align-items:flex-start;flex-direction:column}}
       `
       document.head.appendChild(style)
     }
@@ -202,11 +240,13 @@ window.__ModuleLoader__.load({
       const [flowId, setFlowId] = React.useState()
       const [displayName, setDisplayName] = React.useState()
       const [models, setModels] = React.useState([])
-      const [selected, setSelected] = React.useState('')
+      const [selected, setSelected] = React.useState([])
+      const [modelProtocols, setModelProtocols] = React.useState({})
+      const [defaultModel, setDefaultModel] = React.useState('')
       const [query, setQuery] = React.useState('')
       const [manual, setManual] = React.useState(false)
       const [manualModel, setManualModel] = React.useState('')
-      const [protocol, setProtocol] = React.useState('auto')
+      const [manualProtocol, setManualProtocol] = React.useState('openai-responses')
       const [busy, setBusy] = React.useState(false)
       const [error, setError] = React.useState()
 
@@ -217,10 +257,12 @@ window.__ModuleLoader__.load({
         setCode('')
         setFlowId(undefined)
         setModels([])
-        setSelected('')
+        setSelected([])
+        setModelProtocols({})
+        setDefaultModel('')
         setManual(false)
         setManualModel('')
-        setProtocol('auto')
+        setManualProtocol('openai-responses')
         setError(undefined)
       }
 
@@ -233,7 +275,13 @@ window.__ModuleLoader__.load({
         const nextModels = Array.isArray(payload.models) ? payload.models : []
         setDisplayName(payload.displayName)
         setModels(nextModels)
-        setSelected(nextModels[0]?.id ?? '')
+        const firstModel = nextModels[0]
+        setSelected(firstModel === undefined ? [] : [firstModel.id])
+        setDefaultModel(firstModel?.id ?? '')
+        setModelProtocols(Object.fromEntries(nextModels.map((model) => [
+          model.id,
+          recommendedProtocol(model)
+        ])))
         setManual(nextModels.length === 0)
         setStage('models')
       }
@@ -268,12 +316,20 @@ window.__ModuleLoader__.load({
 
       const configure = async (event) => {
         event.preventDefault()
-        const model = (manual ? manualModel : selected).trim()
-        if (model.length === 0) return
+        const model = manualModel.trim()
+        const selections = manual
+          ? model.length === 0 ? [] : [{ model, protocol: manualProtocol }]
+          : selected.map((id) => ({ model: id, protocol: modelProtocols[id] }))
+        const selectedDefault = manual ? model : defaultModel
+        if (selections.length === 0 || selectedDefault.length === 0) return
         setBusy(true)
         setError(undefined)
         try {
-          const result = await request(CONFIGURE_PATH, { flowId, model, protocol })
+          const result = await request(CONFIGURE_PATH, {
+            flowId,
+            selections,
+            defaultModel: selectedDefault
+          })
           onConnected(result)
         } catch (failure) {
           setError(failure instanceof Error ? failure.message : String(failure))
@@ -383,7 +439,25 @@ window.__ModuleLoader__.load({
       const visibleModels = needle.length === 0
         ? models
         : models.filter((model) => `${model.name} ${model.id}`.toLowerCase().includes(needle))
-      const modelValue = manual ? manualModel : selected
+      const toggleModel = (modelId, checked) => {
+        const next = checked
+          ? [...new Set([...selected, modelId])]
+          : selected.filter((id) => id !== modelId)
+        setSelected(next)
+        if (!next.includes(defaultModel)) setDefaultModel(next[0] ?? '')
+      }
+      const selectVisible = () => {
+        const visibleIds = new Set(visibleModels.map((model) => model.id))
+        const next = models
+          .filter((model) => selected.includes(model.id) || visibleIds.has(model.id))
+          .map((model) => model.id)
+        setSelected(next)
+        if (!next.includes(defaultModel)) setDefaultModel(next[0] ?? '')
+      }
+      const clearSelection = () => {
+        setSelected([])
+        setDefaultModel('')
+      }
       return React.createElement(
         'form',
         { className: 'dshVinabotForm', onSubmit: configure },
@@ -396,19 +470,46 @@ window.__ModuleLoader__.load({
         React.createElement('p', { className: 'dshVinabotHint' }, t.modelHint),
         models.length === 0 ? React.createElement('p', { className: 'dshVinabotWarning' }, t.noModels) : null,
         manual ? React.createElement(
-          'label',
-          { className: 'dshVinabotField' },
-          React.createElement('span', { className: 'dshVinabotLabel' }, t.modelId),
-          React.createElement('input', {
-            className: 'dshVinabotInput',
-            type: 'text',
-            value: manualModel,
-            disabled: busy,
-            autoFocus: true,
-            required: true,
-            placeholder: 'gpt-4o-mini',
-            onChange: (event) => setManualModel(event.target.value)
-          })
+          React.Fragment,
+          null,
+          React.createElement(
+            'label',
+            { className: 'dshVinabotField' },
+            React.createElement('span', { className: 'dshVinabotLabel' }, t.modelId),
+            React.createElement('input', {
+              className: 'dshVinabotInput',
+              type: 'text',
+              value: manualModel,
+              disabled: busy,
+              autoFocus: true,
+              required: true,
+              placeholder: 'gpt-5.6-sol',
+              onChange: (event) => {
+                const value = event.target.value
+                setManualModel(value)
+                setManualProtocol(value.toLowerCase().includes('claude')
+                  ? 'anthropic-messages'
+                  : 'openai-responses')
+              }
+            })
+          ),
+          React.createElement(
+            'label',
+            { className: 'dshVinabotField' },
+            React.createElement('span', { className: 'dshVinabotLabel' }, t.protocol),
+            React.createElement(
+              'select',
+              {
+                className: 'dshVinabotSelect',
+                value: manualProtocol,
+                disabled: busy,
+                onChange: (event) => setManualProtocol(event.target.value)
+              },
+              React.createElement('option', { value: 'openai-responses' }, t.protocolResponses),
+              React.createElement('option', { value: 'anthropic-messages' }, t.protocolAnthropic),
+              React.createElement('option', { value: 'openai-completions' }, t.protocolChat)
+            )
+          )
         ) : React.createElement(
           React.Fragment,
           null,
@@ -425,24 +526,96 @@ window.__ModuleLoader__.load({
             })
           ),
           React.createElement(
+            'div',
+            { className: 'dshVinabotModelTools' },
+            React.createElement(
+              'span',
+              { className: 'dshVinabotLabel' },
+              t.selectedCount.replace('{count}', String(selected.length))
+            ),
+            React.createElement(
+              'div',
+              { className: 'dshVinabotLinks' },
+              React.createElement(
+                'button',
+                { className: 'dshVinabotToggle', type: 'button', disabled: busy || visibleModels.length === 0, onClick: selectVisible },
+                t.selectVisible
+              ),
+              React.createElement(
+                'button',
+                { className: 'dshVinabotToggle', type: 'button', disabled: busy || selected.length === 0, onClick: clearSelection },
+                t.clearSelection
+              )
+            )
+          ),
+          React.createElement(
+            'div',
+            { className: 'dshVinabotModelList' },
+            visibleModels.map((model) => {
+              const checked = selected.includes(model.id)
+              const protocols = Array.isArray(model.protocols) && model.protocols.length > 0
+                ? model.protocols
+                : ['openai-responses']
+              return React.createElement(
+                'div',
+                { className: 'dshVinabotModelRow', key: model.id },
+                React.createElement(
+                  'label',
+                  { className: 'dshVinabotModelChoice' },
+                  React.createElement('input', {
+                    type: 'checkbox',
+                    checked,
+                    disabled: busy,
+                    onChange: (event) => toggleModel(model.id, event.target.checked)
+                  }),
+                  React.createElement(
+                    'span',
+                    { className: 'dshVinabotModelText' },
+                    React.createElement('span', { className: 'dshVinabotModelName' }, model.name),
+                    model.name === model.id ? null : React.createElement('span', { className: 'dshVinabotModelId' }, model.id)
+                  )
+                ),
+                React.createElement(
+                  'select',
+                  {
+                    className: 'dshVinabotSelect',
+                    'aria-label': `${model.name} ${t.protocol}`,
+                    value: modelProtocols[model.id] ?? recommendedProtocol(model),
+                    disabled: busy || !checked,
+                    onChange: (event) => setModelProtocols((current) => ({
+                      ...current,
+                      [model.id]: event.target.value
+                    }))
+                  },
+                  protocols.map((protocol) => React.createElement(
+                    'option',
+                    { value: protocol, key: protocol },
+                    protocolLabel(protocol, t)
+                  ))
+                )
+              )
+            })
+          ),
+          selected.length === 0 ? null : React.createElement(
             'label',
             { className: 'dshVinabotField' },
-            React.createElement('span', { className: 'dshVinabotLabel' }, t.modelId),
+            React.createElement('span', { className: 'dshVinabotLabel' }, t.defaultModel),
             React.createElement(
               'select',
               {
-                className: 'dshVinabotSelect dshVinabotModelSelect',
-                size: Math.min(Math.max(visibleModels.length, 4), 8),
-                value: selected,
+                className: 'dshVinabotSelect',
+                value: defaultModel,
                 disabled: busy,
-                required: true,
-                onChange: (event) => setSelected(event.target.value)
+                onChange: (event) => setDefaultModel(event.target.value)
               },
-              visibleModels.map((model) => React.createElement(
-                'option',
-                { value: model.id, key: model.id },
-                model.name === model.id ? model.id : `${model.name} — ${model.id}`
-              ))
+              selected.map((id) => {
+                const model = models.find((candidate) => candidate.id === id)
+                return React.createElement(
+                  'option',
+                  { value: id, key: id },
+                  model?.name === id || model === undefined ? id : `${model.name} — ${id}`
+                )
+              })
             )
           )
         ),
@@ -451,27 +624,10 @@ window.__ModuleLoader__.load({
           {
             className: 'dshVinabotToggle',
             type: 'button',
-            disabled: busy || (!manual && models.length === 0),
+            disabled: busy || models.length === 0,
             onClick: () => setManual((value) => !value)
           },
-          manual && models.length > 0 ? t.chooseList : t.manual
-        ),
-        React.createElement(
-          'label',
-          { className: 'dshVinabotField' },
-          React.createElement('span', { className: 'dshVinabotLabel' }, t.protocol),
-          React.createElement(
-            'select',
-            {
-              className: 'dshVinabotSelect',
-              value: protocol,
-              disabled: busy,
-              onChange: (event) => setProtocol(event.target.value)
-            },
-            React.createElement('option', { value: 'auto' }, t.protocolAuto),
-            React.createElement('option', { value: 'openai-completions' }, t.protocolChat),
-            React.createElement('option', { value: 'openai-responses' }, t.protocolResponses)
-          )
+          manual ? t.chooseList : t.manual
         ),
         React.createElement('p', { className: 'dshVinabotHint' }, t.storedSafely),
         error === undefined ? null : React.createElement('p', { className: 'dshVinabotError', role: 'alert' }, error),
@@ -485,7 +641,11 @@ window.__ModuleLoader__.load({
           ),
           React.createElement(
             'button',
-            { className: 'dshVinabotButton dshVinabotPrimary', type: 'submit', disabled: busy || modelValue.trim().length === 0 },
+            {
+              className: 'dshVinabotButton dshVinabotPrimary',
+              type: 'submit',
+              disabled: busy || (manual ? manualModel.trim().length === 0 : selected.length === 0 || defaultModel.length === 0)
+            },
             busy ? t.connecting : t.connect
           )
         )

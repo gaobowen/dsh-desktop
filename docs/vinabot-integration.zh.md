@@ -8,7 +8,7 @@
 
 1. 输入 VinaRouter 用户名和密码；
 2. 账号启用两步验证时输入 TOTP 或备用码；
-3. 从可用模型列表中选择模型，或者手动填写模型 ID；
+3. 从可用模型列表中勾选一个或多个模型，或者手动填写模型 ID；
 4. 保存并开始使用。
 
 DSH Desktop 会自动查找或创建本机专用 API Token、读取模型列表、写入模型提供方配置并选择默认模型。
@@ -20,13 +20,14 @@ DSH Desktop 会自动查找或创建本机专用 API Token、读取模型列表�
 1. 启动 DSH Desktop。
 2. 在「连接 VinaRouter」窗口输入中转站用户名和密码。
 3. 如出现「两步验证」，输入身份验证器验证码或备用码。
-4. 搜索并选择模型。列表为空或目标模型尚未公开时，点击「手动填写模型」。
-5. API 协议通常保持「自动推荐」：
-   - 支持 `openai` 的模型优先使用 Chat Completions；
-   - 只支持 `openai-response` 的模型自动使用 Responses API。
+4. 搜索并勾选一个或多个模型，再指定其中一个作为默认模型。列表为空或目标模型尚未公开时，点击「手动填写模型」。
+5. 每个模型的 API 协议会自动选择，也可以单独调整：
+   - 普通模型优先使用 Responses API；
+   - 模型名称或 ID 包含 `claude` 时优先使用 Anthropic API；
+   - 不支持上述协议的模型回退到 Chat Completions。
 6. 点击「保存并开始使用」。
 
-完成后，当前模型会成为 DSH 默认模型。相同协议的其他可用文本模型也会进入 DSH 模型选择器。
+完成后，指定的默认模型会成为 DSH 默认模型，所有已勾选模型都会进入 DSH 模型选择器。
 
 ### 重新配置
 
@@ -76,18 +77,32 @@ dsh-desktop-<DSH 匿名设备标识前 8 位>
 
 ## DSH 配置结果
 
-模型配置写入 `llm-pi-ai` 命名空间，等价结构如下：
+模型配置写入 `llm-pi-ai` 命名空间。由于 DSH 的一个提供方路由只能使用一种协议，插件会按协议自动拆分路由，等价结构如下：
 
 ```yaml
 llm-pi-ai:
   providers:
     vinabot:
-      displayName: VinaRouter
+      displayName: VinaRouter · Responses
+      apiKeyEnv: VINABOT_API_KEY
+      api: openai-responses
+      baseURL: https://router.vinabot.ai/v1
+      models:
+        - id: gpt-5.6-sol
+    vinabot-anthropic:
+      displayName: VinaRouter · Anthropic
+      apiKeyEnv: VINABOT_API_KEY
+      api: anthropic-messages
+      baseURL: https://router.vinabot.ai/v1
+      models:
+        - id: claude-sonnet-example
+    vinabot-chat:
+      displayName: VinaRouter · Chat Completions
       apiKeyEnv: VINABOT_API_KEY
       api: openai-completions
       baseURL: https://router.vinabot.ai/v1
       models:
-        - id: example-model
+        - id: legacy-chat-model
 ```
 
 API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储。默认模型通过 `ctx.agentDefaultModel.saveSelection()` 保存。
@@ -98,13 +113,14 @@ API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储�
 
 | VinaRouter EndpointType | DSH 协议 | 处理方式 |
 | --- | --- | --- |
-| `openai` | `openai-completions` | 支持，自动推荐 |
-| `openai-response` | `openai-responses` | 支持，模型没有 `openai` 时自动使用 |
+| `openai-response` | `openai-responses` | 支持，普通模型优先使用 |
+| `anthropic` | `anthropic-messages` | 支持，Claude 模型优先使用 |
+| `openai` | `openai-completions` | 支持，作为兼容回退 |
 | 图片、视频、Embedding、Rerank 等 | 不适用 | 不显示在该接入向导中 |
 
-一个 DSH 提供方配置只有一个路由级 API 协议。因此保存时只写入与所选协议兼容的模型。需要同时使用 Chat Completions 和 Responses 专属模型时，应分别建立两个提供方配置；首版向导以当前选中模型对应的协议为准。
+一个 DSH 提供方配置只有一个路由级 API 协议。向导会把已选模型按协议写入 `vinabot`、`vinabot-anthropic` 和 `vinabot-chat` 三个受管路由；没有模型的路由会被删除。三个路由共用同一个 `VINABOT_API_KEY` 凭据。
 
-手动填写的模型无法提前判断端点能力，默认使用 `openai-completions`，也可以在界面明确选择 `openai-responses`。
+手动填写的普通模型默认使用 `openai-responses`；名称包含 `claude` 时默认使用 `anthropic-messages`。也可以在界面明确切换协议。
 
 ## 安全边界
 
@@ -147,8 +163,8 @@ npm.cmd run dev
 
 ### 2026-09-10 验证记录
 
-- VinaRouter 定向测试：6 项通过；
-- 完整测试：755 项通过、2 项跳过；
+- VinaRouter 定向测试：7 项通过；
+- 完整测试：756 项通过、2 项跳过；
 - TypeScript 类型检查和生产构建通过；
 - 使用全新临时 `DSH_HOME` 启动真实 Harness 成功；
 - 完成浏览器认证后，`GET /api/dsh-desktop/vinabot/status` 返回 HTTP 200；

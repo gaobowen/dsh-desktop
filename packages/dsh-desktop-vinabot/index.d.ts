@@ -4,6 +4,9 @@ export declare const inject: readonly string[]
 export declare const VINABOT_ORIGIN: string
 export declare const VINABOT_API_BASE: string
 export declare const VINABOT_PROVIDER: string
+export declare const VINABOT_ANTHROPIC_PROVIDER: string
+export declare const VINABOT_CHAT_PROVIDER: string
+export declare const VINABOT_PROVIDER_BY_PROTOCOL: Readonly<Record<VinabotProtocol, string>>
 export declare const VINABOT_CREDENTIAL_REF: string
 export declare const VINABOT_SETTINGS_NAMESPACE: string
 
@@ -16,8 +19,10 @@ export declare const CANCEL_PATH: string
 export interface VinabotModel {
   id: string
   name: string
-  protocols: Array<'openai-completions' | 'openai-responses'>
+  protocols: VinabotProtocol[]
 }
+
+export type VinabotProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
 
 export interface VinabotIntegrationOptions {
   fetchImpl?: typeof globalThis.fetch
@@ -33,7 +38,9 @@ export declare class VinabotIntegrationError extends Error {
 }
 
 export declare function normalizeApiKey(value: unknown): string
+export declare function isClaudeModel(model: unknown): boolean
 export declare function protocolsOfModel(model: unknown): VinabotModel['protocols']
+export declare function recommendedProtocol(model: unknown): VinabotProtocol
 export declare function normalizeModels(payload: unknown): VinabotModel[]
 
 export declare class VinabotClient {

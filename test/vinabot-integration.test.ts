@@ -4,14 +4,18 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  VINABOT_ANTHROPIC_PROVIDER,
+  VINABOT_CHAT_PROVIDER,
   VINABOT_CREDENTIAL_REF,
   STATUS_PATH,
   VINABOT_PROVIDER,
   VINABOT_SETTINGS_NAMESPACE,
   VinabotIntegration,
+  isClaudeModel,
   normalizeApiKey,
   normalizeModels,
-  protocolsOfModel
+  protocolsOfModel,
+  recommendedProtocol
 } from '../packages/dsh-desktop-vinabot/index.js'
 
 interface FakeContext {
@@ -49,9 +53,11 @@ function fakeContext(): FakeContext & {
       ) {
         expect(namespace).toBe(VINABOT_SETTINGS_NAMESPACE)
         for (const operation of operations) {
-          expect(operation.path).toEqual(['providers', VINABOT_PROVIDER])
-          if (operation.op === 'set') context.section.providers[VINABOT_PROVIDER] = operation.value
-          if (operation.op === 'unset') delete context.section.providers[VINABOT_PROVIDER]
+          expect(operation.path[0]).toBe('providers')
+          const provider = operation.path[1]
+          if (provider === undefined) throw new Error('provider route is missing')
+          if (operation.op === 'set') context.section.providers[provider] = operation.value
+          if (operation.op === 'unset') delete context.section.providers[provider]
         }
       }
     },
@@ -86,22 +92,40 @@ describe('VinaRouter model normalization', () => {
     expect(() => normalizeApiKey('')).toThrow(/API 密钥/u)
   })
 
-  it('keeps only OpenAI-compatible text models and deduplicates IDs', () => {
+  it('keeps only supported text models and deduplicates IDs', () => {
     expect(protocolsOfModel({ supported_endpoint_types: ['openai', 'openai-response'] })).toEqual([
-      'openai-completions',
-      'openai-responses'
+      'openai-responses',
+      'openai-completions'
     ])
     expect(normalizeModels({
       data: [
         { id: 'chat-model', name: 'Chat', supported_endpoint_types: ['openai'] },
         { id: 'response-model', supported_endpoint_types: ['openai-response'] },
+        { id: 'claude-sonnet', supported_endpoint_types: ['openai'] },
         { id: 'image-model', supported_endpoint_types: ['image-generation'] },
         { id: 'chat-model', supported_endpoint_types: ['openai'] }
       ]
     })).toEqual([
       { id: 'chat-model', name: 'Chat', protocols: ['openai-completions'] },
-      { id: 'response-model', name: 'response-model', protocols: ['openai-responses'] }
+      { id: 'response-model', name: 'response-model', protocols: ['openai-responses'] },
+      {
+        id: 'claude-sonnet',
+        name: 'claude-sonnet',
+        protocols: ['anthropic-messages', 'openai-completions']
+      }
     ])
+  })
+
+  it('prefers Responses generally and Anthropic Messages for Claude', () => {
+    expect(recommendedProtocol({
+      id: 'gpt-5.6-sol',
+      protocols: ['openai-responses', 'openai-completions']
+    })).toBe('openai-responses')
+    expect(isClaudeModel({ id: 'vendor-model', name: 'Claude Sonnet' })).toBe(true)
+    expect(recommendedProtocol({
+      id: 'claude-sonnet',
+      protocols: ['openai-responses', 'anthropic-messages', 'openai-completions']
+    })).toBe('anthropic-messages')
   })
 })
 
@@ -156,6 +180,7 @@ describe('VinaRouter setup flow', () => {
             { id: 'chat-a', supported_endpoint_types: ['openai'] },
             { id: 'both-b', name: 'Both B', supported_endpoint_types: ['openai', 'openai-response'] },
             { id: 'response-c', supported_endpoint_types: ['openai-response'] },
+            { id: 'claude-sonnet', name: 'Claude Sonnet', supported_endpoint_types: ['openai', 'anthropic'] },
             { id: 'image-d', supported_endpoint_types: ['image-generation'] }
           ]
         })
@@ -177,8 +202,9 @@ describe('VinaRouter setup flow', () => {
       displayName: 'Alice',
       models: [
         { id: 'chat-a', name: 'chat-a', protocols: ['openai-completions'] },
-        { id: 'both-b', name: 'Both B', protocols: ['openai-completions', 'openai-responses'] },
-        { id: 'response-c', name: 'response-c', protocols: ['openai-responses'] }
+        { id: 'both-b', name: 'Both B', protocols: ['openai-responses', 'openai-completions'] },
+        { id: 'response-c', name: 'response-c', protocols: ['openai-responses'] },
+        { id: 'claude-sonnet', name: 'Claude Sonnet', protocols: ['anthropic-messages', 'openai-completions'] }
       ]
     })
     expect(JSON.stringify(login)).not.toContain('panel-token')
@@ -186,32 +212,44 @@ describe('VinaRouter setup flow', () => {
 
     const configured = await integration.configure({
       flowId: 'flow-1',
-      model: 'both-b',
-      protocol: 'auto'
+      selections: [
+        { model: 'both-b', protocol: 'auto' },
+        { model: 'claude-sonnet', protocol: 'auto' }
+      ],
+      defaultModel: 'both-b'
     })
     expect(configured).toMatchObject({
       ok: true,
       configured: true,
       provider: VINABOT_PROVIDER,
       model: 'both-b',
-      protocol: 'openai-completions',
-      modelCount: 2
+      protocol: 'openai-responses',
+      modelCount: 2,
+      providerCount: 2
     })
     expect(context.secret).toBe('sk-raw-model-key')
     expect(context.selection).toEqual({ provider: VINABOT_PROVIDER, model: 'both-b' })
     expect(context.section.providers[VINABOT_PROVIDER]).toEqual({
-      displayName: 'VinaRouter',
+      displayName: 'VinaRouter · Responses',
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
-      api: 'openai-completions',
+      api: 'openai-responses',
       baseURL: 'https://router.vinabot.ai/v1',
-      models: [{ id: 'chat-a' }, { id: 'both-b', name: 'Both B' }]
+      models: [{ id: 'both-b', name: 'Both B' }]
     })
+    expect(context.section.providers[VINABOT_ANTHROPIC_PROVIDER]).toEqual({
+      displayName: 'VinaRouter · Anthropic',
+      apiKeyEnv: VINABOT_CREDENTIAL_REF,
+      api: 'anthropic-messages',
+      baseURL: 'https://router.vinabot.ai/v1',
+      models: [{ id: 'claude-sonnet', name: 'Claude Sonnet' }]
+    })
+    expect(context.section.providers[VINABOT_CHAT_PROVIDER]).toBeUndefined()
     expect(calls.some((call) => new URL(call.url).pathname === '/api/user/auth/logout')).toBe(true)
 
     await expect(integration.status()).resolves.toMatchObject({
       configured: true,
       credentialConfigured: true,
-      protocol: 'openai-completions',
+      protocol: 'openai-responses',
       selected: { provider: VINABOT_PROVIDER, model: 'both-b' }
     })
   })
@@ -295,6 +333,9 @@ describe('VinaRouter package wiring', () => {
     expect(client).toContain("const STATUS_PATH = '/api/dsh-desktop/vinabot/status'")
     expect(client).toContain("ctx.slots.inject('settings.onboarding'")
     expect(client).toContain("ctx.slots.inject('settings.section'")
+    expect(client).toContain("type: 'checkbox'")
+    expect(client).toContain("useState('openai-responses')")
+    expect(client).toContain("protocolAnthropic: 'Anthropic API'")
     expect(client).not.toContain('VINABOT_API_KEY')
   })
 })
