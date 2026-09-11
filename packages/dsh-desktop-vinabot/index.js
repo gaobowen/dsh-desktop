@@ -23,11 +23,18 @@ export const VINABOT_PROVIDER_BY_PROTOCOL = Object.freeze({
   'openai-completions': VINABOT_CHAT_PROVIDER
 })
 
-export const VINABOT_REASONING_EFFORTS = Object.freeze({
-  off: null,
+export const VINABOT_RESPONSES_REASONING_EFFORTS = Object.freeze({
   low: 'low',
   medium: 'medium',
-  high: 'high'
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max'
+})
+
+export const VINABOT_ANTHROPIC_REASONING_EFFORTS = Object.freeze({
+  low: 'low',
+  high: 'high',
+  max: 'max'
 })
 
 export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
@@ -535,12 +542,17 @@ export class VinabotIntegration {
     const grouped = new Map()
     for (const selection of selections) {
       const list = grouped.get(selection.protocol) ?? []
+      const reasoningEfforts = selection.protocol === 'openai-responses'
+        ? VINABOT_RESPONSES_REASONING_EFFORTS
+        : selection.protocol === 'anthropic-messages'
+          ? VINABOT_ANTHROPIC_REASONING_EFFORTS
+          : undefined
       list.push({
         id: selection.model,
         ...(selection.name === selection.model ? {} : { name: selection.name }),
-        ...(selection.protocol === 'openai-completions'
+        ...(reasoningEfforts === undefined
           ? {}
-          : { reasoningEfforts: { ...VINABOT_REASONING_EFFORTS } })
+          : { reasoningEfforts: { ...reasoningEfforts } })
       })
       grouped.set(selection.protocol, list)
     }

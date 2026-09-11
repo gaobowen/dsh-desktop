@@ -7,11 +7,17 @@ export declare const VINABOT_PROVIDER: string
 export declare const VINABOT_ANTHROPIC_PROVIDER: string
 export declare const VINABOT_CHAT_PROVIDER: string
 export declare const VINABOT_PROVIDER_BY_PROTOCOL: Readonly<Record<VinabotProtocol, string>>
-export declare const VINABOT_REASONING_EFFORTS: Readonly<{
-  off: null
+export declare const VINABOT_RESPONSES_REASONING_EFFORTS: Readonly<{
   low: 'low'
   medium: 'medium'
   high: 'high'
+  xhigh: 'xhigh'
+  max: 'max'
+}>
+export declare const VINABOT_ANTHROPIC_REASONING_EFFORTS: Readonly<{
+  low: 'low'
+  high: 'high'
+  max: 'max'
 }>
 export declare const VINABOT_CREDENTIAL_REF: string
 export declare const VINABOT_SETTINGS_NAMESPACE: string

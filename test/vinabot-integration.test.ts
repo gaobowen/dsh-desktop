@@ -9,7 +9,8 @@ import {
   VINABOT_CREDENTIAL_REF,
   STATUS_PATH,
   VINABOT_PROVIDER,
-  VINABOT_REASONING_EFFORTS,
+  VINABOT_ANTHROPIC_REASONING_EFFORTS,
+  VINABOT_RESPONSES_REASONING_EFFORTS,
   VINABOT_SETTINGS_NAMESPACE,
   VinabotIntegration,
   isClaudeModel,
@@ -242,7 +243,7 @@ describe('VinaRouter setup flow', () => {
       models: [{
         id: 'both-b',
         name: 'Both B',
-        reasoningEfforts: VINABOT_REASONING_EFFORTS
+        reasoningEfforts: VINABOT_RESPONSES_REASONING_EFFORTS
       }]
     })
     expect(context.section.providers[VINABOT_ANTHROPIC_PROVIDER]).toEqual({
@@ -253,7 +254,7 @@ describe('VinaRouter setup flow', () => {
       models: [{
         id: 'claude-sonnet',
         name: 'Claude Sonnet',
-        reasoningEfforts: VINABOT_REASONING_EFFORTS
+        reasoningEfforts: VINABOT_ANTHROPIC_REASONING_EFFORTS
       }]
     })
     expect(context.section.providers[VINABOT_CHAT_PROVIDER]).toBeUndefined()
