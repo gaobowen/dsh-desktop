@@ -213,3 +213,76 @@ git diff --stat base/dataelement-v0.9.0-2a847f2...product/v0.9.0
 ## VinaRouter 产品接入
 
 `product/v0.9.0` 内置了 VinaRouter 登录、专用 API Token 获取、模型选择和默认模型配置流程。实现与操作说明见 [DSH Desktop 接入 VinaRouter](./vinabot-integration.zh.md)。
+
+## Windows 顶部拖拽区升级回归记录（2026-09-11）
+
+### 现象
+
+Windows 开发客户端的页面顶部约 36px 高区域无法正常接收鼠标事件：
+
+- 顶部文件按钮、下拉按钮、省略号和右侧面板按钮只有超出该区域的下沿或边角可以点击。
+- 右侧面板的 Tab 无法选择，Tab 关闭按钮无法点击。
+- 双击 Tab 会最大化或还原整个窗口，而不是执行 Tab 交互。
+
+双击控件导致窗口最大化，是该坐标被 Electron 当作非客户端标题栏拖拽区的直接判断依据。此问题位于 DSH Desktop 的 Windows 窗口壳层，与 `dsh-better-sidebar` 等第三方插件无关。
+
+### 根因
+
+`src/preload/windows-titlebar.ts` 会注入独立的透明元素 `#dsh-desktop-windows-drag-region`，并设置：
+
+```css
+position: fixed;
+top: 0;
+height: 36px;
+-webkit-app-region: drag;
+```
+
+Electron 对 `app-region: drag` 使用原生窗口命中测试。`pointer-events: none` 只影响普通 DOM 指针事件，不能取消原生拖拽命中；单纯降低 `z-index`，或者给与拖拽层互为兄弟节点的按钮添加 `no-drag`，也不能可靠地从这块独立覆盖层中挖出可点击区域。
+
+DockKit 的 Tab 本体还是 `div[role="tab"]`，而不是 `<button>`。只覆盖 `button` 的 `no-drag` 规则会遗漏 Tab 本体。
+
+### 当前修复
+
+当前产品分支采取以下组合措施：
+
+1. 将全宽透明拖拽层从 36px 缩小为窗口最顶部 6px，只保留一条不会覆盖工具栏控件的拖动带。
+2. 为 `[role="tab"]` 和 `[data-dockkit-strip]` 显式设置 `-webkit-app-region: no-drag !important`。
+3. 将应用根节点放在拖拽层之上，避免普通控件被最高层透明元素覆盖。
+4. 带 `[data-dockkit-strip-chrome]` 的右侧面板 Tab 条预留 Windows 原生标题栏按钮及应用菜单宽度，防止面板按钮与原生最小化、最大化、关闭按钮重叠。
+
+实现与回归断言分别位于：
+
+- `src/preload/windows-titlebar.ts`
+- `test/windows-titlebar.test.ts`
+
+### 后续合并上游时的检查
+
+每次更新 `upstream/v0.9.0`、升级 Electron，或者升级 Harness 的布局、Conversation、DockKit、Sidebar Right 包后，执行：
+
+```bash
+git diff HEAD..upstream/v0.9.0 -- src/preload/windows-titlebar.ts src/main/index.ts test/windows-titlebar.test.ts
+rg -n "WINDOWS_DRAG_REGION_HEIGHT|dsh-desktop-windows-drag-region|app-region|data-dockkit-strip" src test
+npm.cmd test -- --run test/windows-titlebar.test.ts
+npm.cmd run typecheck
+```
+
+重点检查以下回退信号：
+
+- 拖拽层重新变成 `height: 36px` 或其他覆盖工具栏控件的高度。
+- 独立拖拽层重新使用极高 `z-index`。
+- `[role="tab"]` 或 `[data-dockkit-strip]` 的 `no-drag` 规则丢失。
+- 右侧面板 Tab 条不再为原生标题栏按钮保留安全宽度。
+
+### Windows 真机回归清单
+
+- [ ] 鼠标移到顶部按钮中心时立即出现正确的手型或悬停状态，而不是只有下沿、圆角可点击。
+- [ ] 文件按钮、下拉按钮和省略号按钮的整个可视区域都能点击。
+- [ ] 右侧面板 Tab 可选择、可拖动，关闭按钮可点击。
+- [ ] 双击 Tab 不会最大化或还原窗口。
+- [ ] 右侧面板的新增、分栏、全屏和收起按钮不与 Windows 原生按钮重叠。
+- [ ] 原生最小化、最大化和关闭按钮仍正常工作。
+- [ ] 窗口最顶部 6px 空白带仍能拖动窗口。
+- [ ] 在 100%、125% 和 150% Windows 显示缩放，以及应用内不同缩放级别下重复上述检查。
+- [ ] 开发模式和 Windows 打包产物各验证一次。
+
+preload 修改不会通过 Harness 重启生效。验证前必须结束整个 Electron 开发进程，再重新运行 `npm.cmd run dev`；不要把“重启 Harness”或第二个实例唤醒旧进程误认为桌面壳已经重启。

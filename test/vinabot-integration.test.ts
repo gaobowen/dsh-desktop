@@ -16,6 +16,8 @@ import {
   VINABOT_RESPONSES_REASONING_EFFORTS,
   VINABOT_SETTINGS_NAMESPACE,
   VinabotIntegration,
+  inputModalitiesOfModel,
+  isAllowedVinabotModel,
   isClaudeModel,
   normalizeApiKey,
   normalizeModels,
@@ -97,32 +99,49 @@ describe('VinaRouter model normalization', () => {
     expect(() => normalizeApiKey('')).toThrow(/API 密钥/u)
   })
 
-  it('keeps only supported text models and deduplicates IDs', () => {
+  it('keeps only the admitted model families and versions, with image capabilities', () => {
     expect(protocolsOfModel({ supported_endpoint_types: ['openai', 'openai-response'] })).toEqual([
       'openai-responses',
       'openai-completions'
     ])
     expect(normalizeModels({
       data: [
-        { id: 'chat-model', name: 'Chat', supported_endpoint_types: ['openai'] },
-        { id: 'response-model', supported_endpoint_types: ['openai-response'] },
-        { id: 'claude-sonnet', supported_endpoint_types: ['openai'] },
+        { id: 'gpt-5.6-sol', name: 'GPT 5.6 Sol', supported_endpoint_types: ['openai'] },
+        { id: 'gpt-5.5', supported_endpoint_types: ['openai-response'] },
+        { id: 'claude-fable-5', supported_endpoint_types: ['anthropic'] },
+        { id: 'claude-sonnet-4-5-20250929', supported_endpoint_types: ['anthropic'] },
+        { id: 'deepseek/deepseek-v4.1-flash', supported_endpoint_types: ['openai-response'] },
+        { id: 'deepseek-v4.0', supported_endpoint_types: ['openai-response'] },
+        { id: 'glm-5.3', supported_endpoint_types: ['openai'] },
+        { id: 'glm-5.3-flash', supported_endpoint_types: ['openai'] },
+        { id: 'glm-5.2', supported_endpoint_types: ['openai'] },
+        { id: 'kimi-k3', supported_endpoint_types: ['openai'] },
+        { id: 'kimi-k2.7', supported_endpoint_types: ['openai'] },
         { id: 'image-model', supported_endpoint_types: ['image-generation'] },
-        { id: 'chat-model', supported_endpoint_types: ['openai'] }
+        { id: 'gpt-5.6-sol', supported_endpoint_types: ['openai'] }
       ]
     })).toEqual([
       {
-        id: 'chat-model',
-        name: 'Chat',
-        protocols: ['openai-responses', 'openai-completions']
+        id: 'gpt-5.6-sol',
+        name: 'GPT 5.6 Sol',
+        protocols: ['openai-responses', 'openai-completions'],
+        input: ['text', 'image']
       },
-      { id: 'response-model', name: 'response-model', protocols: ['openai-responses'] },
       {
-        id: 'claude-sonnet',
-        name: 'claude-sonnet',
-        protocols: ['anthropic-messages', 'openai-completions']
-      }
+        id: 'claude-fable-5',
+        name: 'claude-fable-5',
+        protocols: ['anthropic-messages'],
+        input: ['text', 'image']
+      },
+      { id: 'deepseek/deepseek-v4.1-flash', name: 'deepseek/deepseek-v4.1-flash', protocols: ['openai-responses'], input: ['text', 'image'] },
+      { id: 'glm-5.3', name: 'glm-5.3', protocols: ['openai-responses', 'openai-completions'], input: ['text'] },
+      { id: 'glm-5.3-flash', name: 'glm-5.3-flash', protocols: ['openai-responses', 'openai-completions'], input: ['text', 'image'] },
+      { id: 'kimi-k3', name: 'kimi-k3', protocols: ['openai-responses', 'openai-completions'], input: ['text', 'image'] }
     ])
+    expect(isAllowedVinabotModel({ id: 'gpt-6-astra' })).toBe(true)
+    expect(isAllowedVinabotModel({ id: 'claude-opus-4-8' })).toBe(false)
+    expect(inputModalitiesOfModel({ id: 'glm-5.3' })).toEqual(['text'])
+    expect(inputModalitiesOfModel({ id: 'glm-5.3-flash' })).toEqual(['text', 'image'])
   })
 
   it('prefers Responses generally and Anthropic Messages for Claude', () => {
@@ -186,10 +205,10 @@ describe('VinaRouter setup flow', () => {
         return json({
           success: true,
           data: [
-            { id: 'chat-a', supported_endpoint_types: ['openai'] },
-            { id: 'both-b', name: 'Both B', supported_endpoint_types: ['openai', 'openai-response'] },
-            { id: 'response-c', supported_endpoint_types: ['openai-response'] },
-            { id: 'claude-sonnet', name: 'Claude Sonnet', supported_endpoint_types: ['openai', 'anthropic'] },
+            { id: 'gpt-5.6-chat', supported_endpoint_types: ['openai'] },
+            { id: 'gpt-5.6-sol', name: 'GPT 5.6 Sol', supported_endpoint_types: ['openai', 'openai-response'] },
+            { id: 'deepseek-v4.1', supported_endpoint_types: ['openai-response'] },
+            { id: 'claude-fable-5', name: 'Claude Fable 5', supported_endpoint_types: ['openai', 'anthropic'] },
             { id: 'image-d', supported_endpoint_types: ['image-generation'] }
           ]
         })
@@ -210,10 +229,10 @@ describe('VinaRouter setup flow', () => {
       flowId: 'flow-1',
       displayName: 'Alice',
       models: [
-        { id: 'chat-a', name: 'chat-a', protocols: ['openai-responses', 'openai-completions'] },
-        { id: 'both-b', name: 'Both B', protocols: ['openai-responses', 'openai-completions'] },
-        { id: 'response-c', name: 'response-c', protocols: ['openai-responses'] },
-        { id: 'claude-sonnet', name: 'Claude Sonnet', protocols: ['anthropic-messages', 'openai-completions'] }
+        { id: 'gpt-5.6-chat', name: 'gpt-5.6-chat', protocols: ['openai-responses', 'openai-completions'], input: ['text', 'image'] },
+        { id: 'gpt-5.6-sol', name: 'GPT 5.6 Sol', protocols: ['openai-responses', 'openai-completions'], input: ['text', 'image'] },
+        { id: 'deepseek-v4.1', name: 'deepseek-v4.1', protocols: ['openai-responses'], input: ['text', 'image'] },
+        { id: 'claude-fable-5', name: 'Claude Fable 5', protocols: ['anthropic-messages', 'openai-completions'], input: ['text', 'image'] }
       ]
     })
     expect(JSON.stringify(login)).not.toContain('panel-token')
@@ -222,31 +241,32 @@ describe('VinaRouter setup flow', () => {
     const configured = await integration.configure({
       flowId: 'flow-1',
       selections: [
-        { model: 'both-b', protocol: 'auto' },
-        { model: 'claude-sonnet', protocol: 'auto' },
-        { model: 'chat-a', protocol: 'openai-completions' }
+        { model: 'gpt-5.6-sol', protocol: 'auto' },
+        { model: 'claude-fable-5', protocol: 'auto' },
+        { model: 'gpt-5.6-chat', protocol: 'openai-completions' }
       ],
-      defaultModel: 'both-b'
+      defaultModel: 'gpt-5.6-sol'
     })
     expect(configured).toMatchObject({
       ok: true,
       configured: true,
       provider: VINABOT_PROVIDER,
-      model: 'both-b',
+      model: 'gpt-5.6-sol',
       protocol: 'openai-responses',
       modelCount: 3,
       providerCount: 3
     })
     expect(context.secret).toBe('sk-raw-model-key')
-    expect(context.selection).toEqual({ provider: VINABOT_PROVIDER, model: 'both-b' })
+    expect(context.selection).toEqual({ provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol' })
     expect(context.section.providers[VINABOT_PROVIDER]).toEqual({
       displayName: 'VinaRouter · Responses',
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
       api: 'openai-responses',
       baseURL: 'https://router.vinabot.ai/v1',
       models: [{
-        id: 'both-b',
-        name: 'Both B',
+        id: 'gpt-5.6-sol',
+        name: 'GPT 5.6 Sol',
+        input: ['text', 'image'],
         reasoningEfforts: VINABOT_RESPONSES_REASONING_EFFORTS
       }]
     })
@@ -256,8 +276,9 @@ describe('VinaRouter setup flow', () => {
       api: 'anthropic-messages',
       baseURL: 'https://router.vinabot.ai/v1',
       models: [{
-        id: 'claude-sonnet',
-        name: 'Claude Sonnet',
+        id: 'claude-fable-5',
+        name: 'Claude Fable 5',
+        input: ['text', 'image'],
         reasoningEfforts: VINABOT_ANTHROPIC_REASONING_EFFORTS
       }]
     })
@@ -267,7 +288,8 @@ describe('VinaRouter setup flow', () => {
       api: 'openai-completions',
       baseURL: 'https://router.vinabot.ai/v1',
       models: [{
-        id: 'chat-a',
+        id: 'gpt-5.6-chat',
+        input: ['text', 'image'],
         reasoningEfforts: VINABOT_CHAT_REASONING_EFFORTS
       }]
     })
@@ -277,7 +299,7 @@ describe('VinaRouter setup flow', () => {
       configured: true,
       credentialConfigured: true,
       protocol: 'openai-responses',
-      selected: { provider: VINABOT_PROVIDER, model: 'both-b' }
+      selected: { provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol' }
     })
   })
 
@@ -316,7 +338,7 @@ describe('VinaRouter setup flow', () => {
       }
       if (path === '/api/token/1/key') return json({ success: true, data: { key: 'key' } })
       if (path === '/v1/models') {
-        return json({ success: true, data: [{ id: 'o3-only', supported_endpoint_types: ['openai-response'] }] })
+        return json({ success: true, data: [{ id: 'gpt-5.6-sol', supported_endpoint_types: ['openai-response'] }] })
       }
       if (path === '/api/user/auth/logout') return json({ success: true })
       throw new Error(`Unexpected request: ${String(url)}`)
@@ -330,12 +352,12 @@ describe('VinaRouter setup flow', () => {
 
     await expect(integration.configure({
       flowId: 'flow-response',
-      model: 'o3-only',
+      model: 'gpt-5.6-sol',
       protocol: 'auto'
     })).resolves.toMatchObject({ protocol: 'openai-responses' })
     expect(context.section.providers[VINABOT_PROVIDER]).toMatchObject({
       api: 'openai-responses',
-      models: [{ id: 'o3-only' }]
+      models: [{ id: 'gpt-5.6-sol', input: ['text', 'image'] }]
     })
   })
 })

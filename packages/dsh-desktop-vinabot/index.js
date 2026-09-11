@@ -54,6 +54,16 @@ const MAX_UPSTREAM_BODY_BYTES = 4 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 30_000
 const FLOW_TTL_MS = 10 * 60 * 1000
 const MAX_FLOWS = 16
+const TEXT_INPUT = Object.freeze(['text'])
+const IMAGE_INPUT = Object.freeze(['text', 'image'])
+
+const MODEL_FAMILY_RULES = Object.freeze([
+  Object.freeze({ family: /(?:^|[^a-z0-9])gpt(?=$|[^a-z0-9])/iu, minimum: Object.freeze([5, 6]) }),
+  Object.freeze({ family: /(?:^|[^a-z0-9])claude(?=$|[^a-z0-9])/iu, minimum: Object.freeze([5, 0]) }),
+  Object.freeze({ family: /(?:^|[^a-z0-9])deepseek(?=$|[^a-z0-9])/iu, minimum: Object.freeze([4, 1]) }),
+  Object.freeze({ family: /(?:^|[^a-z0-9])glm(?=$|[^a-z0-9])/iu, minimum: Object.freeze([5, 3]) }),
+  Object.freeze({ family: /(?:^|[^a-z0-9])kimi?(?=$|[^a-z0-9])/iu, minimum: Object.freeze([3, 0]) })
+])
 
 /** An expected integration failure with a safe client-facing message. */
 export class VinabotIntegrationError extends Error {
@@ -89,6 +99,47 @@ export function isClaudeModel(model) {
   return `${id} ${names}`.toLowerCase().includes('claude')
 }
 
+function modelLabels(model) {
+  return [model?.id, model?.name, model?.display_name, model?.displayName]
+    .filter((value) => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase())
+}
+
+function versionAfterFamily(label, family) {
+  const match = family.exec(label)
+  if (match === null || match.index === undefined) return undefined
+  const tail = label.slice(match.index + match[0].length)
+  const version = tail.match(/^[^0-9]{0,32}(\d{1,2})(?:[._-](\d{1,3}))?/u)
+  if (version === null) return undefined
+  return [Number(version[1]), Number(version[2] ?? 0)]
+}
+
+function versionAtLeast(actual, minimum) {
+  return actual[0] > minimum[0] || actual[0] === minimum[0] && actual[1] >= minimum[1]
+}
+
+/** Restrict discovery to the model families and minimum versions supported by this integration. */
+export function isAllowedVinabotModel(model) {
+  const labels = modelLabels(model)
+  return MODEL_FAMILY_RULES.some(({ family, minimum }) => labels.some((label) => {
+    const version = versionAfterFamily(label, family)
+    return version !== undefined && versionAtLeast(version, minimum)
+  }))
+}
+
+function isTextOnlyGlm53(model) {
+  const id = typeof model?.id === 'string' ? model.id.trim().toLowerCase() : ''
+  const leaf = id.split('/').at(-1) ?? ''
+  return /^glm[-_. ]*5[._-]3$/u.test(leaf)
+}
+
+/** Every admitted model accepts images except the base glm-5.3 model. */
+export function inputModalitiesOfModel(model) {
+  return isAllowedVinabotModel(model) && !isTextOnlyGlm53(model)
+    ? [...IMAGE_INPUT]
+    : [...TEXT_INPUT]
+}
+
 /** Map NewAPI endpoint identifiers into the text protocols DSH can use here. */
 export function protocolsOfModel(model) {
   const endpoints = Array.isArray(model?.supported_endpoint_types)
@@ -116,7 +167,7 @@ export function recommendedProtocol(model) {
   return isClaudeModel(model) ? 'anthropic-messages' : 'openai-responses'
 }
 
-/** Keep only text models that can drive the DSH agent over a supported wire protocol. */
+/** Keep only admitted agent models that have a supported wire protocol. */
 export function normalizeModels(payload) {
   const rows = Array.isArray(payload?.data) ? payload.data : []
   const seen = new Set()
@@ -124,6 +175,7 @@ export function normalizeModels(payload) {
   for (const row of rows) {
     const id = typeof row?.id === 'string' ? row.id.trim() : ''
     if (id.length === 0 || seen.has(id)) continue
+    if (!isAllowedVinabotModel(row)) continue
     const protocols = protocolsOfModel(row)
     if (protocols.length === 0) continue
     seen.add(id)
@@ -132,7 +184,8 @@ export function normalizeModels(payload) {
     models.push({
       id,
       name: typeof label === 'string' ? label.trim() : id,
-      protocols
+      protocols,
+      input: inputModalitiesOfModel(row)
     })
   }
   return models
@@ -293,7 +346,8 @@ function flowPresentation(flow) {
     models: flow.models.map((model) => ({
       id: model.id,
       name: model.name,
-      protocols: [...model.protocols]
+      protocols: [...model.protocols],
+      input: [...model.input]
     }))
   }
 }
@@ -537,7 +591,8 @@ export class VinabotIntegration {
       return {
         model: selectedModel,
         protocol: this.resolveProtocol(flow, selectedModel, raw?.protocol),
-        name: discovered?.name ?? selectedModel
+        name: discovered?.name ?? selectedModel,
+        input: discovered?.input ?? inputModalitiesOfModel({ id: selectedModel })
       }
     })
     const defaultModel = requireText(input?.defaultModel ?? selections[0]?.model, '默认模型', 512)
@@ -556,6 +611,7 @@ export class VinabotIntegration {
       list.push({
         id: selection.model,
         ...(selection.name === selection.model ? {} : { name: selection.name }),
+        input: [...selection.input],
         reasoningEfforts: { ...reasoningEfforts }
       })
       grouped.set(selection.protocol, list)

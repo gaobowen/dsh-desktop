@@ -89,6 +89,9 @@ llm-pi-ai:
       baseURL: https://router.vinabot.ai/v1
       models:
         - id: gpt-5.6-sol
+          input:
+            - text
+            - image
           reasoningEfforts:
             low: low
             medium: medium
@@ -131,6 +134,8 @@ API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储�
 | `anthropic` | `anthropic-messages` | 支持，Claude 模型优先使用 |
 | `openai` | `openai-responses` + `openai-completions` | 非 Claude 文本模型会乐观提供 Responses，并保留 Chat 作为回退 |
 | 图片、视频、Embedding、Rerank 等 | 不适用 | 不显示在该接入向导中 |
+
+向导还会按模型系列和版本过滤列表，只显示 GPT 5.6 及以上、Claude 5 及以上、DeepSeek 4.1 及以上、GLM 5.3 及以上，以及 Kimi K3 及以上模型。过滤后的模型默认声明 `text` 和 `image` 输入能力；基础模型 `glm-5.3` 是唯一例外，只声明 `text`，而 `glm-5.3-flash` 支持 `text` 和 `image`。
 
 一个 DSH 提供方配置只有一个路由级 API 协议。向导会把已选模型按协议写入 `vinabot`、`vinabot-anthropic` 和 `vinabot-chat` 三个受管路由；没有模型的路由会被删除。三个路由共用同一个 `VINABOT_API_KEY` 凭据。
 

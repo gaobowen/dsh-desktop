@@ -37,6 +37,7 @@ export interface VinabotModel {
   id: string
   name: string
   protocols: VinabotProtocol[]
+  input: Array<'text' | 'image'>
 }
 
 export type VinabotProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
@@ -56,6 +57,8 @@ export declare class VinabotIntegrationError extends Error {
 
 export declare function normalizeApiKey(value: unknown): string
 export declare function isClaudeModel(model: unknown): boolean
+export declare function isAllowedVinabotModel(model: unknown): boolean
+export declare function inputModalitiesOfModel(model: unknown): Array<'text' | 'image'>
 export declare function protocolsOfModel(model: unknown): VinabotModel['protocols']
 export declare function recommendedProtocol(model: unknown): VinabotProtocol
 export declare function normalizeModels(payload: unknown): VinabotModel[]
