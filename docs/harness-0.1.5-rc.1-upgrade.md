@@ -7,6 +7,20 @@
 本次同时执行了 [harness-0.1.5-patch-refactor.md](./harness-0.1.5-patch-refactor.md)
 里的第 1、2 步。
 
+> **后续：已跟进到 `0.1.5-rc.2`**（2026-09-10 发布，npm `next`；`latest` 仍为 rc.1）。
+> 上游 4 个提交，只改了反馈弹窗、交付文件卡片排版与对话间距。
+>
+> - 217 个 dsh 依赖改为 `0.1.5-rc.2`，19 个补丁文件改名；cordis 系版本未变。
+> - 移除 `@deepseek-ai/dsh-typert-generator`：它是 TypeScript 分析 / 代码生成工具，
+>   不在任何运行时依赖链上（lockfile 里只有根项目依赖它），上游 rc.2 也未发布该包。
+> - 被打补丁的 19 个包里只有 `chat`、`deliverables`、`sidebar` 在 rc.2 有改动，
+>   其余与 rc.1 逐字节相同；这三个包里补丁触及的函数与锚点逐一比对均未变化，
+>   sidebar 的 CSS hash 也未变。20 个补丁全部干净套用，无需重做。
+> - `packages/*` 的 dsh peer 区间 `^0.1.5-rc.1` 已覆盖 rc.2，未改动（PPT tarball 因此无需重打）。
+> - 验证：vitest 754/754、tsc、build、`verify-harness-auth.mjs` 通过；web profile（含 PPT）
+>   在自带 Node 与 Electron utility process 下均正常引导（token 1.6–2.4s），inject / entry
+>   失败 0；真实 Chromium 加载首屏 console.error 0 条。
+
 ## 一、依赖方式：vendored tarball → npm registry
 
 `0.1.2-rc.1` 升级文档里写的「上游尚未发布 npm registry 包」已经不成立。实测 226 个
@@ -165,7 +179,46 @@ import 副作用行为。`test/harness-node-entry.test.ts` 增加回归用例，
 > **直接执行 bin.js**，绕开了 wrapper，所以才正常。钩子与此无关，真正原因就是上面这条入口
 > 契约变更。修复后该用例通过，测试套件 **751/751 全绿**。
 
-## 六、遗留问题
+## 六、connection 路由的 inject 归属（真机暴露）
+
+0.1.5 的 `ctx.connection.rpc.handle()` 会把 RPC 通道注册成一条 **webServer 路由**，
+而且注册动作发生在「读取 `connection` 的那个 Context」上：
+
+```js
+// dsh-client-connection
+get rpc() { const owner = this.ctx; return { handle: (ch, h) => this.register(owner, ch, h) } }
+register(owner, channel, handler) { ... return owner.effect(() => owner.webServer.register(route), ...) }
+```
+
+内置 PPT 插件直接 `ctx.connection.rpc.handle(...)`，那个 Context 没有 `webServer`，
+于是抛 `cannot get property "webServer" without inject`，**整棵 plugin tree 加载失败**。
+桌面端的表现是：web profile 起不来 → 插件恢复 → 安全模式 → 再重启，每次冷启动空转约 90 秒。
+
+注意：只把 `"webServer"` 加进插件的 `inject` 数组**不管用**（实测 fiber.inject 和 store 里
+都有它，仍然报同样的错），因为出问题的不是插件自己的 Context。正确写法是把注册放进
+scoped inject——这也正是同一个包里 `registerPreviewAssets` 已经在用的模式：
+
+```js
+ctx.inject(["webServer"], (webCtx) => {
+  webCtx.connection.rpc.handle("/dsh-ppt", pptRpc(service), { authority: "trusted-host" });
+  webCtx.connection.rpc.handle("/kimi-ppt", pptRpc(service), { authority: "trusted-host" });
+});
+```
+
+顶层 `inject` 保持不变（不把 `webServer` 列为必需），这样没有 web server 的 profile 里
+插件的工具半边照常可用，只是不注册 RPC 通道。
+
+`test/ppt-activation.test.mjs` 与 `test/ppt-validation.test.mjs` 的假 host 需要补上
+`effect` / `webServer` 两个成员，否则 scoped 回调不会执行、RPC 通道注册不上。
+
+实测：干净 DSH_HOME 下用 Desktop 的完整启动参数引导 **web profile（含 PPT）**，
+两次冷启动分别 **5s / 4s** 就绪，`without inject` 失败数为 0。
+
+> 同一个 0.1.5 严格校验也打中了第三方插件 `dsh-plugin-width-slider`（同样的
+> `webServer` 报错）。那个不是我们的代码，需要插件作者跟进，或用户先禁用它。
+
+## 七、遗留问题
+
 
 - 中间版本 `0.1.3-alpha.2` / `0.1.5-alpha.1` / `0.1.5-alpha.2` 未逐版比对，只做了两端对比。
   session 日志的磁盘格式如有迁移步骤需另行确认。
