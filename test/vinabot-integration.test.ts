@@ -3,6 +3,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { patchPath } from './patch-path'
+
 import {
   VINABOT_ANTHROPIC_PROVIDER,
   VINABOT_CHAT_PROVIDER,
@@ -346,7 +348,7 @@ describe('VinaRouter package wiring', () => {
       readFile(join(root, 'packages', 'dsh-desktop-vinabot', 'index.js'), 'utf8'),
       readFile(join(root, 'packages', 'dsh-desktop-vinabot', 'client.js'), 'utf8'),
       readFile(join(root, 'package.json'), 'utf8'),
-      readFile(join(root, 'patches', '@deepseek-ai+dsh+0.1.5-rc.1.patch'), 'utf8')
+      readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
     ])
     expect(composition).toContain('name: dsh-desktop-vinabot')
     expect(JSON.parse(manifest).dependencies['dsh-desktop-vinabot']).toBe(

@@ -197,6 +197,19 @@ git diff --stat base/dataelement-v0.9.0-2a847f2...product/v0.9.0
 
 禁用后的验证结果：PPT 组合与 Safe Mode 关键测试 12 项通过；完整测试使用 15 秒超时后 749 项通过、2 项跳过；类型检查和生产构建通过；真实开发客户端正常启动到 Harness Web UI。
 
+## 2026-09-11 上游同步记录
+
+- `upstream/v0.9.0` 从基线 `2a847f2` 前进到 `032dd370a53b68ddb8722dc8cf7a0bc6a71295f7`，本次新增 7 个上游提交。
+- 上游主要变化包括 Harness 升级到 `0.1.5-rc.2`、桌面启动性能优化、启动耗时日志和 PPT `webServer` 注入修复。
+- 使用普通 merge 合并到 `product/v0.9.0`，合并提交为 `6b3dcb4`；Git 未产生文本冲突，并自动保留 VinaRouter 依赖和产品分支的 PPT 屏蔽配置。
+- VinaRouter 本地包的 DSH peer 依赖同步到 `^0.1.5-rc.2`；接线测试改为按包名动态解析当前版本补丁，避免后续 rc 版本改名导致硬编码失败。
+- `npm install` 成功，所有 20 个 `patch-package` 补丁均成功应用到对应依赖；安装过程仍报告 4 个高危依赖审计项和 9 个待审核安装脚本，未在本次上游同步中自动修改供应链策略。
+- `npm run typecheck` 和 `npm run build` 通过；VinaRouter 定向测试 7 项通过。
+- 完整测试使用 `npm test -- --testTimeout=15000 --hookTimeout=30000` 验证：91 个测试文件中 90 个通过、1 个跳过；761 项测试中 759 项通过、2 项跳过、0 项失败。
+- 真实开发客户端已重新启动，Electron 主进程和 `0.1.5-rc.2` Harness 子进程均正常运行。
+
+上游已包含 PPT 注入修复，但本次同步不擅自改变此前用户要求的临时产品策略；`dsh-ppt-composer` 仍未挂载。需要恢复 PPT 时，应单独重新启用该 Entry 并执行正常 Profile、Safe Mode 和打包启动回归。
+
 ## VinaRouter 产品接入
 
 `product/v0.9.0` 内置了 VinaRouter 登录、专用 API Token 获取、模型选择和默认模型配置流程。实现与操作说明见 [DSH Desktop 接入 VinaRouter](./vinabot-integration.zh.md)。
