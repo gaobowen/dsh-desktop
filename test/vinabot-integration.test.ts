@@ -9,6 +9,7 @@ import {
   VINABOT_CREDENTIAL_REF,
   STATUS_PATH,
   VINABOT_PROVIDER,
+  VINABOT_REASONING_EFFORTS,
   VINABOT_SETTINGS_NAMESPACE,
   VinabotIntegration,
   isClaudeModel,
@@ -106,7 +107,11 @@ describe('VinaRouter model normalization', () => {
         { id: 'chat-model', supported_endpoint_types: ['openai'] }
       ]
     })).toEqual([
-      { id: 'chat-model', name: 'Chat', protocols: ['openai-completions'] },
+      {
+        id: 'chat-model',
+        name: 'Chat',
+        protocols: ['openai-responses', 'openai-completions']
+      },
       { id: 'response-model', name: 'response-model', protocols: ['openai-responses'] },
       {
         id: 'claude-sonnet',
@@ -201,7 +206,7 @@ describe('VinaRouter setup flow', () => {
       flowId: 'flow-1',
       displayName: 'Alice',
       models: [
-        { id: 'chat-a', name: 'chat-a', protocols: ['openai-completions'] },
+        { id: 'chat-a', name: 'chat-a', protocols: ['openai-responses', 'openai-completions'] },
         { id: 'both-b', name: 'Both B', protocols: ['openai-responses', 'openai-completions'] },
         { id: 'response-c', name: 'response-c', protocols: ['openai-responses'] },
         { id: 'claude-sonnet', name: 'Claude Sonnet', protocols: ['anthropic-messages', 'openai-completions'] }
@@ -234,14 +239,22 @@ describe('VinaRouter setup flow', () => {
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
       api: 'openai-responses',
       baseURL: 'https://router.vinabot.ai/v1',
-      models: [{ id: 'both-b', name: 'Both B' }]
+      models: [{
+        id: 'both-b',
+        name: 'Both B',
+        reasoningEfforts: VINABOT_REASONING_EFFORTS
+      }]
     })
     expect(context.section.providers[VINABOT_ANTHROPIC_PROVIDER]).toEqual({
       displayName: 'VinaRouter · Anthropic',
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
       api: 'anthropic-messages',
       baseURL: 'https://router.vinabot.ai/v1',
-      models: [{ id: 'claude-sonnet', name: 'Claude Sonnet' }]
+      models: [{
+        id: 'claude-sonnet',
+        name: 'Claude Sonnet',
+        reasoningEfforts: VINABOT_REASONING_EFFORTS
+      }]
     })
     expect(context.section.providers[VINABOT_CHAT_PROVIDER]).toBeUndefined()
     expect(calls.some((call) => new URL(call.url).pathname === '/api/user/auth/logout')).toBe(true)

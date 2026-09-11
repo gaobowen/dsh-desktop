@@ -89,6 +89,11 @@ llm-pi-ai:
       baseURL: https://router.vinabot.ai/v1
       models:
         - id: gpt-5.6-sol
+          reasoningEfforts:
+            off:
+            low: low
+            medium: medium
+            high: high
     vinabot-anthropic:
       displayName: VinaRouter · Anthropic
       apiKeyEnv: VINABOT_API_KEY
@@ -96,6 +101,11 @@ llm-pi-ai:
       baseURL: https://router.vinabot.ai/v1
       models:
         - id: claude-sonnet-example
+          reasoningEfforts:
+            off:
+            low: low
+            medium: medium
+            high: high
     vinabot-chat:
       displayName: VinaRouter · Chat Completions
       apiKeyEnv: VINABOT_API_KEY
@@ -115,12 +125,16 @@ API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储�
 | --- | --- | --- |
 | `openai-response` | `openai-responses` | 支持，普通模型优先使用 |
 | `anthropic` | `anthropic-messages` | 支持，Claude 模型优先使用 |
-| `openai` | `openai-completions` | 支持，作为兼容回退 |
+| `openai` | `openai-responses` + `openai-completions` | 非 Claude 文本模型会乐观提供 Responses，并保留 Chat 作为回退 |
 | 图片、视频、Embedding、Rerank 等 | 不适用 | 不显示在该接入向导中 |
 
 一个 DSH 提供方配置只有一个路由级 API 协议。向导会把已选模型按协议写入 `vinabot`、`vinabot-anthropic` 和 `vinabot-chat` 三个受管路由；没有模型的路由会被删除。三个路由共用同一个 `VINABOT_API_KEY` 凭据。
 
 手动填写的普通模型默认使用 `openai-responses`；名称包含 `claude` 时默认使用 `anthropic-messages`。也可以在界面明确切换协议。
+
+Responses 和 Anthropic 路由中的模型会声明 `off`、`low`、`medium`、`high` 四档推理等级。保存后，在聊天输入框的模型菜单中打开「推理等级」即可为当前会话切换。Chat Completions 回退路由不声明推理等级，避免再次触发“Function tools + reasoning_effort 不支持”的组合错误。
+
+由于部分第三方模型只在运行时暴露协议能力，向导对非 Claude、OpenAI 风格文本模型采用乐观 Responses 策略。如果某个模型实际不接受 `/v1/responses`，请在重新配置页面把该模型切换为 Chat Completions。
 
 ## 安全边界
 
@@ -177,4 +191,5 @@ npm.cmd run dev
 3. API 密钥不出现在浏览器响应、日志和 `settings.yaml`；
 4. Chat Completions 模型可以进行流式回复和工具调用；
 5. Responses-only 模型会自动保存为 `openai-responses`；
-6. 再次启动客户端后无需重新登录即可调用已保存模型。
+6. Responses/Anthropic 模型的聊天模型菜单能切换 Off、Low、Medium、High 推理等级；
+7. 再次启动客户端后无需重新登录即可调用已保存模型。

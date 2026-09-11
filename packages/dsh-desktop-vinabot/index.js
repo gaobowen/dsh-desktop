@@ -23,6 +23,13 @@ export const VINABOT_PROVIDER_BY_PROTOCOL = Object.freeze({
   'openai-completions': VINABOT_CHAT_PROVIDER
 })
 
+export const VINABOT_REASONING_EFFORTS = Object.freeze({
+  off: null,
+  low: 'low',
+  medium: 'medium',
+  high: 'high'
+})
+
 export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
 export const LOGIN_PATH = '/api/dsh-desktop/vinabot/login'
 export const TWO_FACTOR_PATH = '/api/dsh-desktop/vinabot/2fa'
@@ -74,9 +81,12 @@ export function protocolsOfModel(model) {
   const endpoints = Array.isArray(model?.supported_endpoint_types)
     ? model.supported_endpoint_types
     : []
+  const claude = isClaudeModel(model)
   const protocols = []
-  if (endpoints.includes('openai-response')) protocols.push('openai-responses')
-  if (endpoints.includes('anthropic') || isClaudeModel(model)) protocols.push('anthropic-messages')
+  if (endpoints.includes('openai-response') || !claude && endpoints.includes('openai')) {
+    protocols.push('openai-responses')
+  }
+  if (endpoints.includes('anthropic') || claude) protocols.push('anthropic-messages')
   if (endpoints.includes('openai')) protocols.push('openai-completions')
   return protocols
 }
@@ -527,7 +537,10 @@ export class VinabotIntegration {
       const list = grouped.get(selection.protocol) ?? []
       list.push({
         id: selection.model,
-        ...(selection.name === selection.model ? {} : { name: selection.name })
+        ...(selection.name === selection.model ? {} : { name: selection.name }),
+        ...(selection.protocol === 'openai-completions'
+          ? {}
+          : { reasoningEfforts: { ...VINABOT_REASONING_EFFORTS } })
       })
       grouped.set(selection.protocol, list)
     }
