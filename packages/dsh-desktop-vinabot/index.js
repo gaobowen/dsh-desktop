@@ -37,6 +37,12 @@ export const VINABOT_ANTHROPIC_REASONING_EFFORTS = Object.freeze({
   max: 'max'
 })
 
+export const VINABOT_CHAT_REASONING_EFFORTS = Object.freeze({
+  low: 'low',
+  high: 'high',
+  max: 'max'
+})
+
 export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
 export const LOGIN_PATH = '/api/dsh-desktop/vinabot/login'
 export const TWO_FACTOR_PATH = '/api/dsh-desktop/vinabot/2fa'
@@ -546,13 +552,11 @@ export class VinabotIntegration {
         ? VINABOT_RESPONSES_REASONING_EFFORTS
         : selection.protocol === 'anthropic-messages'
           ? VINABOT_ANTHROPIC_REASONING_EFFORTS
-          : undefined
+          : VINABOT_CHAT_REASONING_EFFORTS
       list.push({
         id: selection.model,
         ...(selection.name === selection.model ? {} : { name: selection.name }),
-        ...(reasoningEfforts === undefined
-          ? {}
-          : { reasoningEfforts: { ...reasoningEfforts } })
+        reasoningEfforts: { ...reasoningEfforts }
       })
       grouped.set(selection.protocol, list)
     }

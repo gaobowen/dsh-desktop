@@ -10,6 +10,7 @@ import {
   STATUS_PATH,
   VINABOT_PROVIDER,
   VINABOT_ANTHROPIC_REASONING_EFFORTS,
+  VINABOT_CHAT_REASONING_EFFORTS,
   VINABOT_RESPONSES_REASONING_EFFORTS,
   VINABOT_SETTINGS_NAMESPACE,
   VinabotIntegration,
@@ -220,7 +221,8 @@ describe('VinaRouter setup flow', () => {
       flowId: 'flow-1',
       selections: [
         { model: 'both-b', protocol: 'auto' },
-        { model: 'claude-sonnet', protocol: 'auto' }
+        { model: 'claude-sonnet', protocol: 'auto' },
+        { model: 'chat-a', protocol: 'openai-completions' }
       ],
       defaultModel: 'both-b'
     })
@@ -230,8 +232,8 @@ describe('VinaRouter setup flow', () => {
       provider: VINABOT_PROVIDER,
       model: 'both-b',
       protocol: 'openai-responses',
-      modelCount: 2,
-      providerCount: 2
+      modelCount: 3,
+      providerCount: 3
     })
     expect(context.secret).toBe('sk-raw-model-key')
     expect(context.selection).toEqual({ provider: VINABOT_PROVIDER, model: 'both-b' })
@@ -257,7 +259,16 @@ describe('VinaRouter setup flow', () => {
         reasoningEfforts: VINABOT_ANTHROPIC_REASONING_EFFORTS
       }]
     })
-    expect(context.section.providers[VINABOT_CHAT_PROVIDER]).toBeUndefined()
+    expect(context.section.providers[VINABOT_CHAT_PROVIDER]).toEqual({
+      displayName: 'VinaRouter · Chat Completions',
+      apiKeyEnv: VINABOT_CREDENTIAL_REF,
+      api: 'openai-completions',
+      baseURL: 'https://router.vinabot.ai/v1',
+      models: [{
+        id: 'chat-a',
+        reasoningEfforts: VINABOT_CHAT_REASONING_EFFORTS
+      }]
+    })
     expect(calls.some((call) => new URL(call.url).pathname === '/api/user/auth/logout')).toBe(true)
 
     await expect(integration.status()).resolves.toMatchObject({

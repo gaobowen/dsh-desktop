@@ -19,6 +19,11 @@ export declare const VINABOT_ANTHROPIC_REASONING_EFFORTS: Readonly<{
   high: 'high'
   max: 'max'
 }>
+export declare const VINABOT_CHAT_REASONING_EFFORTS: Readonly<{
+  low: 'low'
+  high: 'high'
+  max: 'max'
+}>
 export declare const VINABOT_CREDENTIAL_REF: string
 export declare const VINABOT_SETTINGS_NAMESPACE: string
 
