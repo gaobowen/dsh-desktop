@@ -37,7 +37,7 @@ describe('temporary chat workspaces', () => {
     await expect(access(created.path)).resolves.toBeUndefined()
   })
 
-  it('keeps separate first-send workspaces instead of sharing a scratch directory', async () => {
+  it('keeps separate temporary-chat workspaces instead of sharing a scratch directory', async () => {
     const home = await mkdtemp(path.join(tmpdir(), 'dsh-temp-chat-'))
     roots.push(home)
 
@@ -51,7 +51,7 @@ describe('temporary chat workspaces', () => {
     expect(entries).toHaveLength(2)
   })
 
-  it('wires lazy creation, first-prompt submission, and the dedicated sidebar group', async () => {
+  it('wires eager Session creation, the standard composer, and the dedicated sidebar group', async () => {
     const [main, preload, workspacePatch, conversationPatch, sidebarPatch] = await Promise.all([
       readFile(path.join(projectRoot, 'src/main/index.ts'), 'utf8'),
       readFile(path.join(projectRoot, 'src/preload/index.ts'), 'utf8'),
@@ -66,9 +66,10 @@ describe('temporary chat workspaces', () => {
     expect(workspacePatch).toContain('TEMPORARY_CHAT_GROUP_KEY')
     expect(workspacePatch).toContain('"group.temporary": "临时会话"')
     expect(workspacePatch).toContain('async createTemporarySession()')
-    expect(conversationPatch).toContain('function TemporaryInputBar')
-    expect(conversationPatch).toContain('startTemporarySession: async (text)')
-    expect(conversationPatch).toContain('binding.session.prompt')
+    expect(workspacePatch).toContain('this.createTemporarySession().catch')
+    expect(conversationPatch).toContain('"workspace.temporary": "临时会话"')
+    expect(conversationPatch).not.toContain('function TemporaryInputBar')
+    expect(conversationPatch).not.toContain('data-temporary-chat-composer')
     expect(sidebarPatch).toContain('workspaceNavigation.startTemporarySession()')
   })
 
