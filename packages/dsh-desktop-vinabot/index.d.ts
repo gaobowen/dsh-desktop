@@ -24,6 +24,7 @@ export declare const VINABOT_CHAT_REASONING_EFFORTS: Readonly<{
   high: 'high'
   max: 'max'
 }>
+export declare const VINABOT_DEFAULT_REASONING_EFFORT: 'high'
 export declare const VINABOT_CREDENTIAL_REF: string
 export declare const VINABOT_SETTINGS_NAMESPACE: string
 
@@ -71,6 +72,7 @@ export declare class VinabotClient {
 
 export declare class VinabotIntegration {
   constructor(ctx: any, options?: VinabotIntegrationOptions)
+  ensureDefaultReasoningEffort(): Promise<void>
   status(): Promise<Record<string, unknown>>
   login(input: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>>
   verifyTwoFactor(input: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>>

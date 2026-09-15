@@ -87,6 +87,7 @@ llm-pi-ai:
       apiKeyEnv: VINABOT_API_KEY
       api: openai-responses
       baseURL: https://router.vinabot.ai/v1
+      reasoning: high
       models:
         - id: gpt-5.6-sol
           input:
@@ -103,6 +104,7 @@ llm-pi-ai:
       apiKeyEnv: VINABOT_API_KEY
       api: anthropic-messages
       baseURL: https://router.vinabot.ai/v1
+      reasoning: high
       models:
         - id: claude-sonnet-example
           reasoningEfforts:
@@ -114,6 +116,7 @@ llm-pi-ai:
       apiKeyEnv: VINABOT_API_KEY
       api: openai-completions
       baseURL: https://router.vinabot.ai/v1
+      reasoning: high
       models:
         - id: third-party-chat-model
           reasoningEfforts:
@@ -122,7 +125,7 @@ llm-pi-ai:
             max: max
 ```
 
-API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储。默认模型通过 `ctx.agentDefaultModel.saveSelection()` 保存。
+API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储。默认模型及其 `high` 推理等级通过 `ctx.agentDefaultModel.saveSelection()` 保存。
 
 ## 模型和协议策略
 
@@ -142,6 +145,8 @@ API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储�
 手动填写的普通模型默认使用 `openai-responses`；名称包含 `claude` 时默认使用 `anthropic-messages`。也可以在界面明确切换协议。
 
 Responses 路由中的模型会声明 `low`、`medium`、`high`、`xhigh`、`max` 五档推理等级；Anthropic 路由中的模型会声明 `low`、`high`、`max` 三档；VinaRouter 的 Chat Completions 路由中所有模型也会声明 `low`、`high`、`max`，并通过通用 `reasoning_effort` 字段传递思考强度。保存后，在聊天输入框的模型菜单中打开「推理等级」即可为当前会话切换。
+
+三种协议的默认推理等级统一为 `high`。模型接入完成或旧配置升级后，聊天输入框默认显示并选中 `High`；用户仍可按会话切换到该协议支持的其他档位。
 
 由于部分第三方模型只在运行时暴露协议能力，向导对非 Claude、OpenAI 风格文本模型采用乐观 Responses 策略。如果某个模型实际不接受 `/v1/responses`，请在重新配置页面把该模型切换为 Chat Completions。
 

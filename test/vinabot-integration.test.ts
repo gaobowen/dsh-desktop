@@ -9,6 +9,7 @@ import {
   VINABOT_ANTHROPIC_PROVIDER,
   VINABOT_CHAT_PROVIDER,
   VINABOT_CREDENTIAL_REF,
+  VINABOT_DEFAULT_REASONING_EFFORT,
   STATUS_PATH,
   VINABOT_PROVIDER,
   VINABOT_ANTHROPIC_REASONING_EFFORTS,
@@ -35,15 +36,15 @@ interface FakeContext {
     set: (_ref: unknown, value: string) => Promise<void>
   }
   agentDefaultModel: {
-    currentSelection: () => { provider: string; model: string }
-    saveSelection: (selection: { provider: string; model: string }) => Promise<void>
+    currentSelection: () => { provider: string; model: string; reasoningEffort?: string }
+    saveSelection: (selection: { provider: string; model: string; reasoningEffort?: string }) => Promise<void>
   }
 }
 
 function fakeContext(): FakeContext & {
   section: { providers: Record<string, unknown> }
   secret?: string
-  selection: { provider: string; model: string }
+  selection: { provider: string; model: string; reasoningEffort?: string }
 } {
   const context = {
     section: { providers: {} as Record<string, unknown> },
@@ -80,7 +81,7 @@ function fakeContext(): FakeContext & {
       currentSelection() {
         return context.selection
       },
-      async saveSelection(selection: { provider: string; model: string }) {
+      async saveSelection(selection: { provider: string; model: string; reasoningEffort?: string }) {
         context.selection = selection
       }
     }
@@ -158,6 +159,31 @@ describe('VinaRouter model normalization', () => {
 })
 
 describe('VinaRouter setup flow', () => {
+  it('migrates existing managed providers to High without replacing an explicit default', async () => {
+    const context = fakeContext()
+    context.section.providers[VINABOT_PROVIDER] = {
+      displayName: 'VinaRouter · Responses',
+      api: 'openai-responses',
+      models: []
+    }
+    context.section.providers[VINABOT_ANTHROPIC_PROVIDER] = {
+      displayName: 'VinaRouter · Anthropic',
+      api: 'anthropic-messages',
+      reasoning: 'low',
+      models: []
+    }
+    const integration = new VinabotIntegration(context, { anonymousId: '12345678' })
+
+    await integration.ensureDefaultReasoningEffort()
+
+    expect(context.section.providers[VINABOT_PROVIDER]).toMatchObject({
+      reasoning: VINABOT_DEFAULT_REASONING_EFFORT
+    })
+    expect(context.section.providers[VINABOT_ANTHROPIC_PROVIDER]).toMatchObject({
+      reasoning: 'low'
+    })
+  })
+
   it('logs in, provisions a device token, stores it Host-side, and selects the model', async () => {
     const context = fakeContext()
     const calls: Array<{ url: string; init?: RequestInit }> = []
@@ -257,12 +283,17 @@ describe('VinaRouter setup flow', () => {
       providerCount: 3
     })
     expect(context.secret).toBe('sk-raw-model-key')
-    expect(context.selection).toEqual({ provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol' })
+    expect(context.selection).toEqual({
+      provider: VINABOT_PROVIDER,
+      model: 'gpt-5.6-sol',
+      reasoningEffort: VINABOT_DEFAULT_REASONING_EFFORT
+    })
     expect(context.section.providers[VINABOT_PROVIDER]).toEqual({
       displayName: 'VinaRouter · Responses',
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
       api: 'openai-responses',
       baseURL: 'https://router.vinabot.ai/v1',
+      reasoning: VINABOT_DEFAULT_REASONING_EFFORT,
       models: [{
         id: 'gpt-5.6-sol',
         name: 'GPT 5.6 Sol',
@@ -275,6 +306,7 @@ describe('VinaRouter setup flow', () => {
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
       api: 'anthropic-messages',
       baseURL: 'https://router.vinabot.ai/v1',
+      reasoning: VINABOT_DEFAULT_REASONING_EFFORT,
       models: [{
         id: 'claude-fable-5',
         name: 'Claude Fable 5',
@@ -287,6 +319,7 @@ describe('VinaRouter setup flow', () => {
       apiKeyEnv: VINABOT_CREDENTIAL_REF,
       api: 'openai-completions',
       baseURL: 'https://router.vinabot.ai/v1',
+      reasoning: VINABOT_DEFAULT_REASONING_EFFORT,
       models: [{
         id: 'gpt-5.6-chat',
         input: ['text', 'image'],
@@ -299,7 +332,11 @@ describe('VinaRouter setup flow', () => {
       configured: true,
       credentialConfigured: true,
       protocol: 'openai-responses',
-      selected: { provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol' }
+      selected: {
+        provider: VINABOT_PROVIDER,
+        model: 'gpt-5.6-sol',
+        reasoningEffort: VINABOT_DEFAULT_REASONING_EFFORT
+      }
     })
   })
 

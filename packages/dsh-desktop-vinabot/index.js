@@ -43,6 +43,8 @@ export const VINABOT_CHAT_REASONING_EFFORTS = Object.freeze({
   max: 'max'
 })
 
+export const VINABOT_DEFAULT_REASONING_EFFORT = 'high'
+
 export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
 export const LOGIN_PATH = '/api/dsh-desktop/vinabot/login'
 export const TWO_FACTOR_PATH = '/api/dsh-desktop/vinabot/2fa'
@@ -403,6 +405,23 @@ export class VinabotIntegration {
     return flow
   }
 
+  async ensureDefaultReasoningEffort() {
+    const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
+    const providers = asObject(section?.providers)
+    const operations = Object.values(VINABOT_PROVIDER_BY_PROTOCOL).flatMap((provider) => {
+      const profile = asObject(providers?.[provider])
+      if (profile === undefined || profile.reasoning !== undefined) return []
+      return [{
+        op: 'set',
+        path: ['providers', provider],
+        value: { ...profile, reasoning: VINABOT_DEFAULT_REASONING_EFFORT }
+      }]
+    })
+    if (operations.length > 0) {
+      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations)
+    }
+  }
+
   async status() {
     const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
     const providers = asObject(section?.providers)
@@ -630,6 +649,7 @@ export class VinabotIntegration {
         apiKeyEnv: VINABOT_CREDENTIAL_REF,
         api: protocol,
         baseURL: VINABOT_API_BASE,
+        reasoning: VINABOT_DEFAULT_REASONING_EFFORT,
         models
       })
     }
@@ -681,7 +701,8 @@ export class VinabotIntegration {
     try {
       await this.ctx.agentDefaultModel.saveSelection({
         provider: defaultProvider,
-        model: defaultModel
+        model: defaultModel,
+        reasoningEffort: VINABOT_DEFAULT_REASONING_EFFORT
       })
     } catch {
       warning = 'VinaRouter 已接入，但默认模型未能保存；请在聊天输入框中手动选择一次。'
@@ -751,6 +772,10 @@ function registerJsonRoute(connection, path, methods, handler) {
 export function apply(ctx) {
   const integration = new VinabotIntegration(ctx)
   const connection = Reflect.get(ctx, 'connection')
+
+  integration.ensureDefaultReasoningEffort().catch((error) => {
+    console.warn('VinaRouter 默认推理等级迁移失败：', error)
+  })
 
   registerJsonRoute(connection, STATUS_PATH, ['GET'], () => integration.status())
   registerJsonRoute(connection, LOGIN_PATH, ['POST'], async (request) => {
