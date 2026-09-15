@@ -85,6 +85,7 @@ import {
 } from './state/generation-migration'
 import { runProfileStartupMaintenance } from './state/profile-startup-maintenance'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
+import { createTemporaryChatWorkspace } from './temporary-chat'
 import {
   cleanupVerifiedRemovalBackup,
   confirmPluginRemovalsBooted,
@@ -1476,6 +1477,12 @@ function registerHarnessHandlers(): void {
         bundledHarnessVersion(app.getAppPath()) ?? (locale === 'zh' ? '未知' : 'Unknown'),
       locale
     }
+  })
+
+  ipcMain.removeHandler('temporary-chat:create-workspace')
+  ipcMain.handle('temporary-chat:create-workspace', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    return createTemporaryChatWorkspace(app.getPath('home'))
   })
 }
 
