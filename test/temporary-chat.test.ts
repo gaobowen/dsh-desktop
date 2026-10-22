@@ -1,8 +1,8 @@
 import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Script } from 'node:vm'
-import { afterEach, describe, expect, it } from 'vitest'
+import { runInNewContext, Script } from 'node:vm'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createTemporaryChatWorkspace,
   TEMPORARY_CHAT_DIRECTORY,
@@ -11,6 +11,32 @@ import {
 import { patchPath, projectRoot } from './patch-path'
 
 const roots: string[] = []
+
+async function temporaryNavigation(createDirectory?: () => Promise<{ path: string }>) {
+  const source = await readFile(path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js'), 'utf8')
+  const start = source.indexOf('class extends', source.indexOf('var UiWorkspaceService ='))
+  const end = source.indexOf('\n\t\t};', start)
+  if (start < 0 || end < start) throw new Error('Installed Workspace navigation service is unavailable')
+  // Evaluate the installed service, without constructing its unrelated Cordis subscriptions.
+  const Service = runInNewContext(`(${source.slice(start, end + '\n\t\t}'.length)})`, {
+    _deepseek_ai_cordis: { Service: class {} },
+    dshDesktop: createDirectory ? { createTemporaryChatWorkspace: createDirectory } : undefined
+  }) as { prototype: { createTemporarySession(): Promise<string>; startTemporarySession(): void } }
+  const createWorkspace = vi.fn(async () => ({ workspaceId: 'temporary-workspace' }))
+  const connectWorkspace = vi.fn(async () => 'temporary-session')
+  const openSession = vi.fn()
+  const clearMain = vi.fn()
+  const selectPanel = vi.fn()
+  const service = Object.assign(Object.create(Service.prototype) as typeof Service.prototype, {
+    workspaces: { create: createWorkspace },
+    connectWorkspace,
+    openSession,
+    clearMain,
+    ctx: { layout: { selectPanel } },
+    sessionStarter: null as null | (() => boolean)
+  })
+  return { service, createWorkspace, connectWorkspace, openSession, clearMain, selectPanel }
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -49,6 +75,75 @@ describe('temporary chat workspaces', () => {
 
     expect(first.path).not.toBe(second.path)
     expect(entries).toHaveLength(2)
+  })
+
+  it('creates and opens a real Session through the upgraded Workspace service', async () => {
+    const directory = path.join(tmpdir(), 'DSH Desktop', 'Temporary Chats', 'chat-fixture')
+    const createDirectory = vi.fn(async () => ({ path: directory }))
+    const navigation = await temporaryNavigation(createDirectory)
+
+    await expect(navigation.service.createTemporarySession()).resolves.toBe('temporary-session')
+    expect(createDirectory).toHaveBeenCalledOnce()
+    expect(navigation.createWorkspace).toHaveBeenCalledWith({ path: directory })
+    expect(navigation.connectWorkspace).toHaveBeenCalledWith('temporary-workspace')
+    expect(navigation.openSession).toHaveBeenCalledWith('temporary-session')
+  })
+
+  it('refuses an absent desktop bridge or directory failure before registering a Workspace', async () => {
+    const missing = await temporaryNavigation()
+    await expect(missing.service.createTemporarySession()).rejects.toThrow('Temporary chats are unavailable')
+    expect(missing.createWorkspace).not.toHaveBeenCalled()
+
+    const failed = await temporaryNavigation(async () => { throw new Error('Directory access denied') })
+    await expect(failed.service.createTemporarySession()).rejects.toThrow('Directory access denied')
+    expect(failed.createWorkspace).not.toHaveBeenCalled()
+    expect(failed.openSession).not.toHaveBeenCalled()
+  })
+
+  it('honors the optional Workbench new-session handler without creating a temporary directory', async () => {
+    const createDirectory = vi.fn(async () => ({ path: 'unused' }))
+    const navigation = await temporaryNavigation(createDirectory)
+    navigation.service.sessionStarter = vi.fn(() => true)
+
+    navigation.service.startTemporarySession()
+
+    expect(navigation.service.sessionStarter).toHaveBeenCalledOnce()
+    expect(createDirectory).not.toHaveBeenCalled()
+    expect(navigation.clearMain).not.toHaveBeenCalled()
+    expect(navigation.selectPanel).not.toHaveBeenCalled()
+  })
+
+  it('groups temporary chats separately and retains their creation entry when ordinary folders are empty', async () => {
+    const source = await readFile(path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js'), 'utf8')
+    const functions = ['deriveGroups', 'mainSessionId', 'owningGroupKey', 'isTemporaryChatWorkspace', 'groupByWorkspace', 'buildGroup', 'sessionVisible'].map((name) => {
+      const start = source.indexOf(`function ${name}(`)
+      const end = source.indexOf('\n\t\t}', start)
+      if (start < 0 || end < start) throw new Error(`Installed Workspace grouping function ${name} is unavailable`)
+      return source.slice(start, end + '\n\t\t}'.length)
+    })
+    const derive = runInNewContext(`(() => {
+      const TEMPORARY_CHAT_GROUP_KEY = '__dsh_desktop_temporary_chats__';
+      ${functions.join('\n')}
+      return (list, workspaces) => deriveGroups(list, workspaces,
+        { archivedSessionIds: [], pinnedSessionIds: [], archivedFilter: 'default' },
+        new Map(), { expandedGroups: [], ungroupedOrder: [] }, 'Temporary chats');
+    })()`) as (list: unknown, workspaces: unknown[]) => Array<{ key: string; label: string; sessionCount: number }>
+    const workspace = (id: string, directory: string, sessions: string[] = []) => ({
+      workspaceId: id, path: directory, sessionIds: sessions, title: id, createdAt: '2026-10-22T00:00:00Z'
+    })
+    const empty = { ids: [], byId: {} }
+    expect(derive(empty, [workspace('empty', '/fixture/project')])).toEqual([
+      expect.objectContaining({ key: '__dsh_desktop_temporary_chats__', label: 'Temporary chats', sessionCount: 0 })
+    ])
+    const list = { ids: ['first', 'second'], byId: {
+      first: { id: 'first', retainedBy: {} }, second: { id: 'second', retainedBy: {} }
+    } }
+    expect(derive(list, [
+      workspace('one', '/fixture/DSH Desktop/Temporary Chats/chat-one', ['first']),
+      workspace('two', 'C:\\fixture\\DSH Desktop\\Temporary Chats\\chat-two', ['second'])
+    ])).toEqual([
+      expect.objectContaining({ key: '__dsh_desktop_temporary_chats__', sessionCount: 2 })
+    ])
   })
 
   it('wires eager Session creation, the standard composer, and the dedicated sidebar group', async () => {

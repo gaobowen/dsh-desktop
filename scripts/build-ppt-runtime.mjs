@@ -2,19 +2,29 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import { promisify } from 'node:util'
-import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import sharp from 'sharp'
+import { transform } from 'esbuild'
 import { replaceInstalledPackages } from './ppt-package-projection.mjs'
+import { runCli } from '../packages/ppt-runtime/core/lib/bin.js'
 
-const run = promisify(execFile)
+async function runCliCommand(args) {
+  let stdout = ''
+  let stderr = ''
+  const io = {
+    stdout: { write: chunk => { stdout += chunk } },
+    stderr: { write: chunk => { stderr += chunk } }
+  }
+  const exitCode = await runCli(args, io)
+  if (exitCode !== 0) {
+    throw new Error(`runCli ${args.join(' ')} failed (exit ${exitCode}): ${stderr || stdout}`)
+  }
+  return { stdout, stderr }
+}
+
 const root = path.resolve('packages/ppt-runtime')
 const templateRoot = path.resolve(process.env.DSH_PPT_TEMPLATE_OUTPUT ?? '.build/ppt-runtime/templates')
 const outputRoot = path.resolve('.build/ppt-runtime/packages')
-// Use npm_node_execpath so bin.js subprocesses use the real Node, not the `node`
-// npm package binary that npm injects into PATH via node_modules/.bin.
-const nodeExec = process.env.npm_node_execpath ?? process.execPath
 const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-ppt-build-'))
 const specs = []
 for (const category of await fs.readdir(templateRoot)) {
@@ -25,6 +35,7 @@ for (const category of await fs.readdir(templateRoot)) {
 specs.sort((a, b) => a.definition.id.localeCompare(b.definition.id))
 if (specs.length !== 16) throw Error('Expected exactly sixteen maintained templates')
 
+const fullPreviews = {}
 const previews = {}
 const previewFiles = {}
 const generatedPages = new Map()
@@ -36,13 +47,13 @@ try {
 
   for (const { definition } of specs) {
     const directory = path.join(templateRoot, definition.referenceDirectory)
-    const { stdout } = await run(nodeExec, [path.join(root, 'core/lib/bin.js'), 'check', path.join(directory, 'source'), '--json'])
+    const { stdout } = await runCliCommand(['check', path.join(directory, 'source'), '--json'])
     const check = JSON.parse(stdout)
     if (check.errorCount) throw Error(definition.id + ': ' + stdout)
     checks.push({ id: definition.id, ...check })
 
     const pngDirectory = path.join(scratch, 'screenshots', definition.id)
-    await run(nodeExec, [path.join(root, 'core/lib/bin.js'), 'screenshot', path.join(directory, 'source'), '-o', pngDirectory, '--scale', '1.3333333333', '--json'])
+    await runCliCommand(['screenshot', path.join(directory, 'source'), '-o', pngDirectory, '--scale', '1.3333333333', '--json'])
     const pngs = JSON.parse(await fs.readFile(path.join(pngDirectory, 'index.json'), 'utf8')).pages.map(page => page.file)
     if (pngs.length !== definition.referencePageCount) throw Error('Incomplete preview set')
 
@@ -55,6 +66,13 @@ try {
     }
     generatedPages.set(definition.id, pageDirectory)
 
+    fullPreviews[definition.id] = await Promise.all(Array.from({ length: pngs.length }, async (_, index) => {
+      const relative = path.join(definition.referenceDirectory, 'pages', `${String(index + 1).padStart(2, '0')}.jpg`).split(path.sep).join('/')
+      const bytes = await fs.readFile(path.join(pageDirectory, `${String(index + 1).padStart(2, '0')}.jpg`))
+      const hash = crypto.createHash('sha256').update(bytes).digest('hex')
+      previewFiles[hash] = relative
+      return `/dsh-ppt/previews/${hash}.jpg`
+    }))
     previews[definition.id] = await Promise.all(definition.previewSlides.map(async number => {
       const relative = path.join(definition.referenceDirectory, 'pages', `${String(number).padStart(2, '0')}.jpg`).split(path.sep).join('/')
       const bytes = await fs.readFile(path.join(pageDirectory, `${String(number).padStart(2, '0')}.jpg`))
@@ -77,9 +95,20 @@ try {
 
     let client = await fs.readFile(path.join(stage, 'lib/client.js'), 'utf8')
     if (!client.includes('/* PERSONAL_TEMPLATE_MANAGER */')) throw Error('Missing personal template client marker')
-    client = client.replace('/* PERSONAL_TEMPLATE_MANAGER */', await fs.readFile(path.join(root, 'client/personal-template-manager.js'), 'utf8'))
+    let manager = await fs.readFile(path.join(root, 'client/personal-template-manager.js'), 'utf8')
     if (!client.includes('/* GENERATED_PPT_PREVIEWS */ {}')) throw Error('Missing preview insertion marker')
     client = client.replace('/* GENERATED_PPT_PREVIEWS */ {}', JSON.stringify(previews))
+    const fullPreviewIndexes = Object.fromEntries(Object.entries(fullPreviews).map(([id, pages]) => [id, pages.map(page => previews[id].indexOf(page))]))
+    if (Object.values(fullPreviewIndexes).some(pages => pages.some(index => index < 0))) throw Error('Full preview resource missing from curated previews')
+    manager = manager.replace('/* GENERATED_PPT_FULL_PREVIEWS */ {}', `Object.fromEntries(Object.entries(${JSON.stringify(fullPreviewIndexes)}).map(([id, indexes]) => [id, indexes.map(index => CURATED_TEMPLATE_PREVIEWS[id][index])]))`)
+    // Keep named components debuggable while compacting their private bindings.
+    const compiledManager = (await transform(manager, {
+      minifyWhitespace: true, minifySyntax: true, minifyIdentifiers: true, keepNames: true, target: 'es2022'
+    })).code
+    client = client.replace('/* PERSONAL_TEMPLATE_MANAGER */', () => compiledManager)
+    // Keep the loader's bindings and public component names while compacting
+    // the complete client, including version-branch contributions.
+    client = (await transform(client, { minifyWhitespace: true, target: 'es2022' })).code
     await fs.writeFile(path.join(stage, 'lib/client.js'), client)
 
     if (kind === 'core') {

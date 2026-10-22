@@ -1,29 +1,53 @@
 import type { IpcRenderer } from 'electron'
 import { WINDOWS_TITLEBAR_HEIGHT } from '../shared/desktop-menu'
+import { mountWindowsMenuBar } from './windows-menu-bar'
 
 const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
-const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
-const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
-const WINDOWS_DRAG_REGION_HEIGHT = 6
+const MODAL_OPEN_ATTRIBUTE = 'data-dsh-modal-open'
+
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
 }
 
+/** Harness reads this marker while creating its first layout frame. */
+export function markWindowsTitlebar(document: Document): void {
+  const apply = (root: HTMLElement): void => {
+    root.dataset.windowsTitlebar = ''
+    root.style.setProperty('--dsh-windows-titlebar-height', `${WINDOWS_TITLEBAR_HEIGHT}px`)
+  }
+  const root = document.documentElement as HTMLElement | null
+  if (root) {
+    apply(root)
+    return
+  }
+  // Preload can run before the parser creates <html>. Mark it the moment it
+  // exists so every Harness script, including its first layout, sees it.
+  const observer = new MutationObserver(() => {
+    const created = document.documentElement as HTMLElement | null
+    if (!created) return
+    observer.disconnect()
+    apply(created)
+  })
+  observer.observe(document, { childList: true })
+}
+
+/**
+ * Windows caption layout. Harness 0.1.7 owns the caption row on its pages
+ * (AppFrame reserves it, paints it and makes it draggable) once the marker is
+ * set; Desktop adds the caption menubar in the upstream seat, a drag strip for
+ * its own local pages, and releases the drag area while a dialog is open.
+ */
 export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions): void {
   const { document, ipcRenderer } = options
+  markWindowsTitlebar(document)
   if (!document.body) return
 
   installLayout(document)
-  installDragRegion(document)
-  trackSidebarLayout(document)
-
-  document.addEventListener('pointerdown', () => {
-    void ipcRenderer.invoke('desktop-titlebar:close-menu').catch((error: unknown) => {
-      console.warn('[desktop-titlebar] unable to close the application menu', error)
-    })
-  })
+  if (document.location.protocol === 'file:') installDragRegion(document)
+  trackModals(document)
+  mountWindowsMenuBar({ document, ipcRenderer })
 
   syncTheme(document, ipcRenderer)
   const themeObserver = new MutationObserver(() => syncTheme(document, ipcRenderer))
@@ -45,7 +69,6 @@ function installLayout(document: Document): void {
   style.textContent = `
     html, body { height: 100% !important; }
     body.dsh-desktop-windows-titlebar-layout {
-      ${CAPTION_WIDTH_PROPERTY}: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px)));
       box-sizing: border-box !important;
       height: 100% !important;
       padding-top: 0 !important;
@@ -53,36 +76,13 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout > #root {
       height: 100% !important;
       min-height: 0 !important;
-      position: relative;
-      z-index: 1;
     }
-    :root {
-      --dsh-titlebar-safe-inset-top: max(36px, env(titlebar-area-height, 36px));
-      --dsh-titlebar-safe-inset-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
+    /* A drag region wins over a dialog's buttons in the caption row, so both
+       Harness's caption strip and Desktop's own give way while one is open. */
+    html[${MODAL_OPEN_ATTRIBUTE}] :has(> [data-shell-overlay])::before {
+      -webkit-app-region: no-drag !important;
     }
-    body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
-      padding-top: 6px !important;
-    }
-    body.dsh-desktop-windows-titlebar-layout
-      [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"]
-      > div:has([data-dsh-sidebar-brand-identity]) {
-      -webkit-app-region: drag;
-    }
-    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel],
-    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel="fullscreen"],
-    body.dsh-desktop-windows-titlebar-layout [data-rightbar-col] > div,
-    body.dsh-desktop-windows-titlebar-layout [data-side="rightbar"] {
-      top: var(--dsh-titlebar-safe-inset-top, 36px) !important;
-      height: calc(100% - var(--dsh-titlebar-safe-inset-top, 36px)) !important;
-    }
-    /* rc.2 owns the header outside the session slot. Keep all header
-       contributions in normal flow below the native caption/menu strip. */
-    body.dsh-desktop-windows-titlebar-layout [data-dsh-conversation-header] {
-      min-height: 76px !important;
-      padding-top: calc(var(--dsh-titlebar-safe-inset-top, 36px) + 6px) !important;
-      box-sizing: border-box !important;
-      -webkit-app-region: drag;
-    }
+    html[${MODAL_OPEN_ATTRIBUTE}] #${DRAG_REGION_ID} { display: none !important; }
     body.dsh-desktop-windows-titlebar-layout button,
     body.dsh-desktop-windows-titlebar-layout a,
     body.dsh-desktop-windows-titlebar-layout input,
@@ -90,27 +90,17 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout textarea,
     body.dsh-desktop-windows-titlebar-layout [role="button"],
     body.dsh-desktop-windows-titlebar-layout [role="tab"],
-    body.dsh-desktop-windows-titlebar-layout [data-dockkit-strip],
     body.dsh-desktop-windows-titlebar-layout [role="menuitem"],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
       -webkit-app-region: no-drag !important;
     }
-    body.dsh-desktop-windows-titlebar-layout
-      [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"]
-      > div:has([data-dsh-sidebar-brand-identity])
-      > button:has([data-dsh-sidebar-brand-identity]) {
-      -webkit-app-region: drag !important;
-    }
-    body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-brand-identity] {
-      -webkit-app-region: no-drag !important;
-    }
     #${DRAG_REGION_ID} {
       position: fixed;
-      z-index: 0;
+      z-index: 10;
       top: 0;
       left: 0;
-      right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
-      height: ${WINDOWS_DRAG_REGION_HEIGHT}px;
+      right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px)));
+      height: ${WINDOWS_TITLEBAR_HEIGHT}px;
       background: transparent;
       pointer-events: none;
       user-select: none;
@@ -120,27 +110,26 @@ function installLayout(document: Document): void {
   document.head.appendChild(style)
 }
 
+/** Desktop's local pages have no Harness caption strip, so they get their own. */
 function installDragRegion(document: Document): void {
   if (document.getElementById(DRAG_REGION_ID)) return
   const dragRegion = document.createElement('div')
   dragRegion.id = DRAG_REGION_ID
   dragRegion.setAttribute('aria-hidden', 'true')
   document.body.appendChild(dragRegion)
+}
 
-  // The native drag region still wins over a modal's buttons in the top
-  // 36px, so hide it while a real dialog is open. Only semantic dialog
-  // markers count: class-name guesses match permanent elements and would
-  // hide the region for good.
+function trackModals(document: Document): void {
+  // Only semantic dialog markers count: class-name guesses match permanent
+  // elements and would release the drag area for good.
   const modalSelector = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
-
-  const updateDragRegionVisibility = (): void => {
+  const update = (): void => {
     const hasModal = Array.from(document.querySelectorAll<HTMLElement>(modalSelector)).some((el) => {
       if (el.offsetWidth === 0 || el.offsetHeight === 0) return false
       const style = window.getComputedStyle(el)
       return style.visibility !== 'hidden' && style.opacity !== '0'
     })
-    const display = hasModal ? 'none' : 'block'
-    if (dragRegion.style.display !== display) dragRegion.style.display = display
+    document.documentElement.toggleAttribute(MODAL_OPEN_ATTRIBUTE, hasModal)
   }
 
   // Streaming output mutates the DOM continuously; check at most once a frame.
@@ -150,10 +139,9 @@ function installDragRegion(document: Document): void {
     scheduled = true
     requestAnimationFrame(() => {
       scheduled = false
-      updateDragRegionVisibility()
+      update()
     })
   }
-
   const observer = new MutationObserver(scheduleUpdate)
   observer.observe(document.documentElement, {
     childList: true,
@@ -161,37 +149,7 @@ function installDragRegion(document: Document): void {
     attributes: true,
     attributeFilter: ['open', 'style', 'class', 'hidden', 'aria-hidden', 'aria-modal', 'role']
   })
-  updateDragRegionVisibility()
-}
-
-function trackSidebarLayout(document: Document): void {
-  let observedSidebarColumn: HTMLElement | null = null
-  const resizeObserver = new ResizeObserver(() => updateSidebarWidth())
-
-  const updateSidebarWidth = (): void => {
-    if (!observedSidebarColumn) {
-      document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')
-      return
-    }
-    const width = observedSidebarColumn.getBoundingClientRect().width
-    document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, `${Math.max(0, width)}px`)
-  }
-
-  const sync = (): void => {
-    const sidebarRoot = document.querySelector<HTMLElement>('[data-dsh-sidebar-root]')
-    const sidebarColumn = sidebarRoot?.parentElement ?? null
-
-    if (sidebarColumn !== observedSidebarColumn) {
-      if (observedSidebarColumn) resizeObserver.unobserve(observedSidebarColumn)
-      observedSidebarColumn = sidebarColumn
-      if (sidebarColumn) resizeObserver.observe(sidebarColumn)
-    }
-    updateSidebarWidth()
-  }
-
-  const observer = new MutationObserver(sync)
-  observer.observe(document.documentElement, { childList: true, subtree: true })
-  sync()
+  update()
 }
 
 function syncTheme(document: Document, ipcRenderer: Pick<IpcRenderer, 'invoke'>): void {

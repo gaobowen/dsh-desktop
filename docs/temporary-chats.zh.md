@@ -36,6 +36,10 @@ C:\Users\Administrator\DSH Desktop\Temporary Chats\chat-20260915T010203Z-ab12cd3
 
 ## 上游升级检查
 
+`v0.12.1` / Harness `0.2.1-rc.2` 的迁移记录见 [升级说明](./upstream-v0.12.1-upgrade.zh.md)。
+新版 `startSession` 的草稿参数继续保留；启用工作台并接管新会话时，临时会话入口先交给该处理器。
+普通空工作区遵循上游隐藏规则，临时会话分组作为创建入口保留。
+
 升级 Harness 后需要重点复核：
 
 1. `UiWorkspaceService` 的 `connectWorkspace`、`openSession` 和 `startSession` 接口是否变化。

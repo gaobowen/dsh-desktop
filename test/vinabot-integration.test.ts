@@ -166,7 +166,7 @@ describe('VinaRouter model normalization', () => {
 })
 
 describe('VinaRouter setup flow', () => {
-  it('uses the Harness 0.1.7 descriptor API and reports a missing model settings entry', async () => {
+  it('uses the Harness descriptor API and reports a missing model settings entry', async () => {
     const context = fakeContext()
     const integration = new VinabotIntegration(context, { anonymousId: '12345678' })
 

@@ -198,7 +198,63 @@ describe('Harness launch contract', () => {
         Path: 'windows-path'
       }
     })
-    expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PNPM_ENTRY')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PNPM_RUNNER')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP')
+  })
+
+  it('tells the Harness which packaged pnpm to run instead of PATH pnpm.cmd', () => {
+    // Add-plugin reads `pnpm config get registry` on every click. On Windows
+    // PATH pnpm is a .cmd shim, and execa wraps that in cmd.exe. The entry
+    // turns these paths into runCli({ packageManager }) so the command is the
+    // Electron executable. A parent-shell value must not win.
+    const options = buildHarnessSpawnOptions(
+      'C:\\launch-root',
+      'C:\\harness',
+      'win32',
+      {
+        Path: 'C:\\Windows\\System32',
+        DSH_DESKTOP_PNPM_ENTRY: 'C:\\stale\\pnpm.cjs',
+        DSH_DESKTOP_PNPM_RUNNER: 'C:\\stale\\pnpm-runner.mjs'
+      },
+      'web',
+      {
+        entryPath: 'C:\\app\\node_modules\\pnpm\\bin\\pnpm.cjs',
+        runnerPath: 'C:\\app\\node_modules\\dsh-desktop-market-installer\\pnpm-runner.mjs'
+      }
+    )
+    expect(options.env).toMatchObject({
+      DSH_DESKTOP_PNPM_ENTRY: 'C:\\app\\node_modules\\pnpm\\bin\\pnpm.cjs',
+      DSH_DESKTOP_PNPM_RUNNER: 'C:\\app\\node_modules\\dsh-desktop-market-installer\\pnpm-runner.mjs'
+    })
+  })
+
+  it('gives the Harness the Windows console-hide bootstrap and ignores a parent path', () => {
+    const injected = buildHarnessSpawnOptions(
+      'C:\\launch-root',
+      'C:\\harness',
+      'win32',
+      {
+        Path: 'C:\\Windows\\System32',
+        DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: 'C:\\stale\\windows-hide-console-import.mjs'
+      },
+      'web',
+      { hideConsoleBootstrapPath: 'C:\\app\\resources\\windows-hide-console-import.mjs' }
+    )
+    expect(injected.env).toMatchObject({
+      DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: 'C:\\app\\resources\\windows-hide-console-import.mjs'
+    })
+
+    const otherPlatform = buildHarnessSpawnOptions(
+      '/launch-root',
+      '/harness',
+      'darwin',
+      { PATH: '/usr/bin', DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: '/stale/bootstrap.mjs' },
+      'web',
+      { hideConsoleBootstrapPath: '/app/windows-hide-console-import.mjs' }
+    )
+    expect(otherPlatform.env).not.toHaveProperty('DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP')
   })
 
   it('asks the patched Harness to resolve Safe Mode plugins from its installation only', () => {
@@ -226,6 +282,12 @@ describe('Harness launch contract', () => {
       })
       expect(options.detached).toBeFalsy()
     }
+  })
+
+  it('launches Linux Harness through the Electron executable in Node mode', () => {
+    // No standalone Node is installed; Linux development runs execPath as Node.
+    const options = buildHarnessSpawnOptions('/launch-root', '/harness', 'linux', { PATH: '/usr/bin' })
+    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
   })
 
   it('finds the Windows PATH when the environment block stores it lowercase', () => {
@@ -729,10 +791,10 @@ describe('Harness window activation', () => {
 
   it('stamps Windows renderer URLs so plugins can avoid the native titlebar overlay', () => {
     expect(desktopHarnessUrl('http://127.0.0.1:43127', 'win32')).toBe(
-      'http://127.0.0.1:43127/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=36'
+      'http://127.0.0.1:43127/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=40'
     )
     expect(desktopHarnessUrl('http://127.0.0.1:43127/?workspace=demo', 'win32')).toBe(
-      'http://127.0.0.1:43127/?workspace=demo&dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=36'
+      'http://127.0.0.1:43127/?workspace=demo&dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=40'
     )
     expect(desktopHarnessUrl('http://127.0.0.1:43127', 'darwin')).toBe(
       'http://127.0.0.1:43127'

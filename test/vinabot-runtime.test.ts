@@ -10,7 +10,7 @@ import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
 import { resolveTestNodeExecutable } from './node-executable'
 
-it('serves VinaRouter status through the real Harness 0.1.7 settings service', async () => {
+it('configures all VinaRouter protocols and retains High after a Harness 0.2.1 restart', async () => {
   const root = resolve(import.meta.dirname, '..')
   const home = await mkdtemp(join(tmpdir(), 'dsh-vinabot-runtime-'))
   const patch = join(home, 'vinabot.patch.yml')
@@ -45,7 +45,11 @@ globalThis.fetch = async (input, init) => {
     return json({});
   }
   if (url.pathname === '/api/token/41/key') return json({ key: 'fixture-key' });
-  if (url.pathname === '/v1/models') return json([{ id: 'gpt-5.6-sol', supported_endpoint_types: ['openai-response'] }]);
+  if (url.pathname === '/v1/models') return json([
+    { id: 'gpt-5.6-sol', supported_endpoint_types: ['openai-response'] },
+    { id: 'claude-fable-5', supported_endpoint_types: ['anthropic'] },
+    { id: 'glm-5.3-flash', supported_endpoint_types: ['openai'] }
+  ]);
   if (url.pathname === '/api/user/auth/logout') return json({});
   throw new Error('Unexpected relay fixture path: ' + url.pathname);
 };
@@ -75,13 +79,42 @@ globalThis.fetch = async (input, init) => {
     expect(loginResult).toMatchObject({ ok: true, stage: 'models' })
     const configured = await request(CONFIGURE_PATH, {
       flowId: loginResult.flowId,
-      selections: [{ model: 'gpt-5.6-sol', protocol: 'openai-responses' }],
+      selections: [
+        { model: 'gpt-5.6-sol', protocol: 'openai-responses' },
+        { model: 'claude-fable-5', protocol: 'anthropic-messages' },
+        { model: 'glm-5.3-flash', protocol: 'openai-completions' }
+      ],
       defaultModel: 'gpt-5.6-sol'
     })
-    expect(configured).toMatchObject({ ok: true, configured: true, provider: VINABOT_PROVIDER })
+    expect(configured).toMatchObject({ ok: true, configured: true, provider: VINABOT_PROVIDER, modelCount: 3, providerCount: 3 })
     const after = await fetch(new URL(STATUS_PATH, snapshot.url), { headers: { Cookie: cookie } })
     expect(after.status, await after.clone().text()).toBe(200)
-    await expect(after.json()).resolves.toMatchObject({ ok: true, configured: true, credentialConfigured: true })
+    await expect(after.json()).resolves.toMatchObject({
+      ok: true,
+      configured: true,
+      credentialConfigured: true,
+      selected: { provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      models: expect.arrayContaining([
+        expect.objectContaining({ id: 'gpt-5.6-sol', protocol: 'openai-responses' }),
+        expect.objectContaining({ id: 'claude-fable-5', protocol: 'anthropic-messages' }),
+        expect.objectContaining({ id: 'glm-5.3-flash', protocol: 'openai-completions' })
+      ])
+    })
+    await runtime.stop()
+    await runtime.start(home, SAFE_MODE_PROFILE)
+    const restarted = runtime.snapshot()
+    expect(restarted.phase, restarted.logs.join('\n')).toBe('ready')
+    if (!restarted.url || !restarted.authToken) throw new Error('Harness restart did not announce its endpoint')
+    const relogin = await fetch(`${restarted.url}/?token=${encodeURIComponent(restarted.authToken)}`, { redirect: 'manual' })
+    const newCookie = relogin.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
+    const restored = await fetch(new URL(STATUS_PATH, restarted.url), { headers: { Cookie: newCookie } })
+    expect(restored.status, await restored.clone().text()).toBe(200)
+    await expect(restored.json()).resolves.toMatchObject({
+      ok: true,
+      configured: true,
+      credentialConfigured: true,
+      selected: { provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol', reasoningEffort: 'high' }
+    })
     expect(runtime.snapshot().logs.join('\n')).not.toContain('settings.get is not a function')
   } finally {
     await runtime.stop()

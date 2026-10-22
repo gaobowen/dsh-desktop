@@ -2,6 +2,8 @@
 
 本文记录产品分支内置 VinaRouter（`https://router.vinabot.ai`）的实现、用户操作和维护注意事项。
 
+当前产品基线为 `v0.12.1` / Harness `0.2.1-rc.2`；兼容改动与验收见 [升级记录](./upstream-v0.12.1-upgrade.zh.md)。
+
 ## 目标
 
 用户不需要理解 OpenAI 兼容配置，也不需要手动复制 API 密钥。首次启动或打开「设置 → VinaRouter」后，只需：
