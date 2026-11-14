@@ -4,22 +4,33 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSafeModeViewModel,
   safeModeBlockingGroupCount,
+  normalRelaunchArguments,
+  relaunchArguments,
   safeModeExitConfirmation,
   shouldStartInSafeMode
 } from '../src/main/safe-mode'
-import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
+import type { ProfileCompatibilityIssue } from '../src/main/profile/profile-compatibility'
 import {
   ensureSafeModeProfile,
   extractSafeModePatch,
   SAFE_MODE_BUNDLES,
   SAFE_MODE_MODEL_ENTRY_IDS,
   SAFE_MODE_PROFILE
-} from '../src/main/state/safe-mode-profile'
+} from '../src/main/recovery/safe-mode-profile'
 
 describe('Safe Mode', () => {
   it('is opt-in through an exact command-line switch', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode'])).toBe(true)
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
+    expect(relaunchArguments(['/Electron', '/app', '--user-data-dir=/tmp/dsh', '--safe-mode'])).toEqual([
+      '/app',
+      '--user-data-dir=/tmp/dsh',
+      '--safe-mode'
+    ])
+    expect(normalRelaunchArguments(['/Electron', '/app', '--user-data-dir=/tmp/dsh', '--safe-mode'])).toEqual([
+      '/app',
+      '--user-data-dir=/tmp/dsh'
+    ])
   })
 
   it('marks plugins as still being checked until the market check answers', () => {
@@ -79,7 +90,7 @@ describe('Safe Mode', () => {
     })
     expect(model.badge).toBe('安全模式')
     expect(model.heading).toBe('')
-    expect(model.summary).toBe('安全模式暂时跳过第三方插件。停用有问题的插件后重启；插件和数据都会保留。')
+    expect(model.summary).toBe('当前处于安全模式，尚未恢复正常启动。可能由插件导致，可在此停用后重启验证；插件和数据都会保留。')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
       { name: 'plugin-a', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false },
@@ -96,7 +107,7 @@ describe('Safe Mode', () => {
       selectionHint: 'Select plugins to disable',
       applyLabel: 'Disable selected plugins',
       agentLabel: 'Close',
-      restartLabel: 'Exit Safe Mode and restart',
+      restartLabel: 'Restart and verify',
       quitLabel: 'Quit DSH Desktop'
     })
   })
@@ -143,7 +154,7 @@ describe('Safe Mode', () => {
       disabled: false
     })
     expect(model.issueGroups).toEqual([])
-    expect(model.restartLabel).toBe('退出安全模式并重启')
+    expect(model.restartLabel).toBe('重启并验证')
     expect(model.restartConfirm).toContain('仍有 1 组阻断问题')
   })
 
@@ -429,6 +440,25 @@ describe('Safe Mode', () => {
     }
   })
 
+  it('always ensures agent-default-model is present in safe mode patch even if web profile patch is empty or omitted', async () => {
+    const dshHome = join(__dirname, '.temp-safe-mode-empty-patch')
+    try {
+      const webProfileDir = join(dshHome, 'profiles', 'web')
+      const { mkdir } = await import('node:fs/promises')
+      await mkdir(webProfileDir, { recursive: true })
+      await writeFile(join(webProfileDir, 'cordis.patch.yml'), '[]\n')
+
+      const directory = await ensureSafeModeProfile(dshHome)
+      const safePatch = await readFile(join(directory, 'cordis.patch.yml'), 'utf8')
+      expect(safePatch).toContain('id: agent-default-model')
+      expect(safePatch).toContain('provider: deepseek-official')
+      expect(safePatch).toContain('model: deepseek-flash')
+      expect(safePatch).toContain('disabled: false')
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
   it('creates a managed core-only profile and repairs later modifications', async () => {
     const dshHome = join(__dirname, '.temp-safe-mode-profile')
     try {
@@ -438,7 +468,7 @@ describe('Safe Mode', () => {
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
       expect(manifest.dependencies).toEqual({})
       expect(manifest.dsh.profile.bundles).toEqual(SAFE_MODE_BUNDLES)
-      expect(await readFile(join(directory, 'cordis.patch.yml'), 'utf8')).toContain('[]')
+      expect(await readFile(join(directory, 'cordis.patch.yml'), 'utf8')).toContain('agent-default-model')
 
       manifest.dependencies['third-party-plugin'] = '1.0.0'
       manifest.dsh.profile.bundles.push('third-party-plugin')

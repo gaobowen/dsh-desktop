@@ -2,7 +2,7 @@
 
 本文记录产品分支内置 VinaRouter（`https://router.vinabot.ai`）的实现、用户操作和维护注意事项。
 
-当前产品基线为 `v0.12.1` / Harness `0.2.1-rc.2`；兼容改动与验收见 [升级记录](./upstream-v0.12.1-upgrade.zh.md)。
+当前产品基线为 `v0.14.0` / Harness `0.2.2-rc.1`；迁移边界见 [开发说明](./development.md#fork-v0140-migration-boundary-2026-11-14)。新版由 `src/main/shell/product-patch.ts` 在普通 `desktop` Profile 挂载插件，Safe Mode 不挂载。`profiles/web` 按上游机制复制到 `profiles/desktop`，原目录保留。旧版记录见 [v0.12.1 升级说明](./upstream-v0.12.1-upgrade.zh.md)。
 
 ## 目标
 

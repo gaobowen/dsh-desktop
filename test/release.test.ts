@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.1-rc.2'
+const HARNESS_VERSION = '0.2.2-rc.1'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -151,13 +151,14 @@ describe('GitHub release contract', () => {
       expect(packageJson.dependencies[packageName]).toBeUndefined()
       expect(packageLock.packages[`node_modules/${packageName}`]).toBeUndefined()
     }
-    // Official bundles own these, including the rc.2 retrieval API and model badge.
+    // Official bundles own these, including retrieval and entry customization.
+    // 0.2.2 no longer ships the dated deepseek-model-label-1017 web plugin.
     for (const packageName of [
       '@deepseek-ai/dsh-tool-terminal',
       '@deepseek-ai/dsh-tool-session-query',
       '@deepseek-ai/dsh-session-title-all-prompts-llm',
       '@deepseek-ai/dsh-web-deepseek-api',
-      '@deepseek-ai/dsh-client-ui-deepseek-model-label-1017'
+      '@deepseek-ai/dsh-client-ui-entry-customization'
     ]) {
       expect(packageJson.dependencies[packageName]).toBeUndefined()
       expect(packageLock.packages[`node_modules/${packageName}`]).toBeDefined()
@@ -181,19 +182,6 @@ describe('GitHub release contract', () => {
         portable?: unknown
       }
     }
-    const harnessNodeEntry = await readFile(
-      path.join(projectRoot, 'build', 'harness-node-entry.mjs'),
-      'utf8'
-    )
-    const windowsHiddenConsole = await readFile(
-      path.join(projectRoot, 'build', 'windows-hidden-console.mjs'),
-      'utf8'
-    )
-    const windowsHideConsoleImport = await readFile(
-      path.join(projectRoot, 'build', 'windows-hide-console-import.mjs'),
-      'utf8'
-    )
-
     expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
     expect(packageJson.build.asar).toBe(true)
     // JavaScript stays in app.asar; only files the OS loads or executes unpack.
@@ -208,52 +196,30 @@ describe('GitHub release contract', () => {
       from: 'build/app-icon.png',
       to: 'icon.png'
     })
-    expect(packageJson.build.extraResources).toContainEqual({
-      from: 'build/windows-hidden-console.mjs',
-      to: 'windows-hidden-console.mjs'
-    })
-    expect(harnessNodeEntry).toContain("await import('./windows-hidden-console.mjs')")
-    // A top-level import: leaving this out of the package does not degrade the
-    // host peer fallback, it stops the Harness entry from loading at all.
-    expect(packageJson.build.extraResources).toContainEqual({
-      from: 'build/host-module-fallback.mjs',
-      to: 'host-module-fallback.mjs'
-    })
-    expect(harnessNodeEntry).toContain("from './host-module-fallback.mjs'")
-    expect(packageJson.build.extraResources).toContainEqual({
-      from: 'build/dshmarket-settings-compat.mjs',
-      to: 'dshmarket-settings-compat.mjs'
-    })
-    expect(harnessNodeEntry).toContain("from './dshmarket-settings-compat.mjs'")
-    expect(packageJson.build.extraResources).toContainEqual({
-      from: 'build/harness-parent-lifeline.mjs',
-      to: 'harness-parent-lifeline.mjs'
-    })
-    expect(harnessNodeEntry).toContain("from './harness-parent-lifeline.mjs'")
+    for (const removed of [
+      'build/harness-node-entry.mjs',
+      'build/host-module-fallback.mjs',
+      'build/windows-hidden-console.mjs',
+      'build/windows-child-process-hide.mjs',
+      'build/windows-hide-console-import.mjs'
+    ]) {
+      expect(packageJson.build.extraResources).not.toContainEqual(expect.objectContaining({ from: removed }))
+    }
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/packaged-pnpm-invocation.mjs',
       to: 'packaged-pnpm-invocation.mjs'
     })
-    expect(harnessNodeEntry).toContain("from './packaged-pnpm-invocation.mjs'")
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/office-engine-resolution.mjs',
       to: 'office-engine-resolution.mjs'
     })
-    expect(harnessNodeEntry).toContain("from './office-engine-resolution.mjs'")
-    expect(windowsHiddenConsole).toContain('export function createHiddenConsole')
-    expect(packageJson.build.extraResources).toContainEqual({
-      from: 'build/windows-child-process-hide.mjs',
-      to: 'windows-child-process-hide.mjs'
-    })
-    expect(windowsHideConsoleImport).toContain("await import('./windows-hidden-console.mjs')")
-    expect(windowsHideConsoleImport).toContain('enforceWindowsChildProcessHide')
-    expect(packageJson.build.extraResources).toContainEqual({
-      from: 'build/windows-hide-console-import.mjs',
-      to: 'windows-hide-console-import.mjs'
-    })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/splash.html',
       to: 'splash.html'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/startup-whale.gif',
+      to: 'startup-whale.gif'
     })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/dsh-loader.gif',
@@ -274,6 +240,10 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/web-import.html',
       to: 'web-import.html'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'THIRD_PARTY_NOTICES.md',
+      to: 'THIRD_PARTY_NOTICES.md'
     })
     expect(packageJson.build.nsis.artifactName).toBe(
       'dsh-desktop-windows-${arch}-setup.${ext}'
@@ -358,7 +328,7 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['package:win']).toContain('electron-builder-windows.mjs')
     expect(packageJson.scripts['package:dev:win']).toContain('electron-builder-windows.mjs')
     expect(packageJson.build.nsis.allowToChangeInstallationDirectory).toBe(true)
-    expect(workflow).toContain('node scripts/electron-builder-windows.mjs --win --x64 --publish never')
+    expect(workflow).toContain('node scripts/release/electron-builder-windows.mjs --win --x64 --publish never')
   })
 
   it('packages an isolated development channel from the current workspace', async () => {
@@ -391,6 +361,23 @@ describe('GitHub release contract', () => {
     expect(developmentConfig.nsis.artifactName).toBe('dsh-desktop-dev-windows-${arch}-setup.${ext}')
   })
 
+  it('builds the official package from the transplanted shell', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string>, build: { extraMetadata?: { main?: string } } }
+    const officialVite = await readFile(path.join(projectRoot, 'electron.vite.config.ts'), 'utf8')
+
+    expect(packageJson.scripts['build:shell']).toBeUndefined()
+    expect(packageJson.scripts['package:shell:mac:arm64']).toBeUndefined()
+    expect(packageJson.scripts.build).toContain('electron-vite build')
+    expect(officialVite).toContain("resolve('src/main/shell/app.ts')")
+    expect(officialVite).toContain("resolve('src/host/index.ts')")
+    expect(officialVite).toContain("resolve('src/preload/app.ts')")
+    expect(officialVite).not.toContain('src/main/index.ts')
+    expect(officialVite).not.toContain('src/preload/index.ts')
+    expect(officialVite).not.toContain('electron.vite.shell.config.ts')
+  })
+
   it('builds and publishes every supported platform', async () => {
     const workflow = await readFile(
       path.join(projectRoot, '.github', 'workflows', 'release.yml'),
@@ -405,20 +392,21 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('$sourceExecutable = Get-Item $env:SMOKE_EXE')
     expect(workflow).toContain("$isolatedApp = Join-Path $env:RUNNER_TEMP")
     expect(workflow).toContain('$executable = Join-Path $isolatedApp $sourceExecutable.Name')
-    expect(workflow).toContain('-WorkingDirectory $isolatedApp')
     expect(workflow).toContain('Packaged koffi native binding failed (exit code $koffiExitCode).')
     expect(workflow).toContain("'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
-    expect(workflow).toContain('if (-not [string]::IsNullOrEmpty($log))')
-    expect(workflow).toContain("dsh web: (http://127\\.0\\.0\\.1:\\d+/\\?token=[^\\s]+)")
-    expect(workflow).toContain('-SessionVariable harnessSession')
-    expect(workflow).toContain('-WebSession $harnessSession')
-    expect(workflow).toContain('Packaged Windows Harness smoke test passed.')
-    expect(workflow).toContain('payload = @{ args = @{ request = $request } }')
-    expect(workflow).toContain("Invoke-HarnessRpc 'workspace/create'")
-    expect(workflow).toContain("Invoke-HarnessRpc 'session/create'")
-    expect(workflow).toContain('Harness process exited after workspace and session creation.')
-    expect(workflow).toContain('prerelease_tag:')
-    expect(workflow).toContain('signed_version:')
+    expect(workflow).toContain('check-workbench-install.mjs "$executable"')
+    expect(workflow).toContain('$process.Kill($true)')
+    const acceptance = await readFile(path.join(projectRoot, 'scripts/verify/check-workbench-install.mjs'), 'utf8')
+    expect(acceptance).toContain('Packaged Windows Harness smoke test passed.')
+    expect(acceptance).toContain('window.dshDesktopBoot.ready()')
+    expect(acceptance).toContain("rpc('workspace/create'")
+    expect(acceptance).toContain("rpc('session/create'")
+    expect(acceptance).toContain('readyAfter20Seconds: true')
+    expect(workflow).toContain('node scripts/release/archive-windows-release.mjs "$env:ARCHIVE_DIST"')
+    expect(workflow).toContain("&& 'dist' || 'dist-dev'")
+    expect(workflow).not.toContain('tar -czf dist/win-unpacked.tar.gz')
+    expect(workflow).toContain('version:')
+    expect(workflow).not.toContain('signed_version:')
     expect(workflow).toContain('mode:')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
@@ -469,7 +457,7 @@ describe('GitHub release contract', () => {
     )
   })
 
-  it('builds the runtime once per native job before tests and packaging', async () => {
+  it('builds once before shared checks and each native packaging job', async () => {
     const workflow = parse(await readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')) as {
       jobs: Record<string, { steps: Array<{ run?: string; uses?: string; with?: Record<string, unknown> }> }>
     }
@@ -577,23 +565,22 @@ describe('GitHub release contract', () => {
   it('does not change Windows security settings during installation', async () => {
     const installer = await readFile(path.join(projectRoot, 'build', 'installer.nsh'), 'utf8')
     expect(installer).not.toMatch(/Add-MpPreference|HKLM|ExecShell\s+"runas"/)
+    expect(installer).not.toMatch(/RequestExecutionLevel\s+highest/)
   })
 
-  it('routes stable downloads through the website and previews through GitHub', async () => {
+  it('routes README downloads through the website without direct asset links', async () => {
     const readmes = await Promise.all(
-      ['README.md', 'README.zh.md', 'README.ja.md', 'README.ru.md', 'README.es.md', 'README.pt.md'].map((file) =>
+      ['README.md', 'README.zh.md', 'README.en.md', 'README.ja.md', 'README.ru.md', 'README.es.md', 'README.pt.md'].map((file) =>
         readFile(path.join(projectRoot, file), 'utf8')
       )
     )
 
     for (const readme of readmes) {
-      expect(readme).toMatch(/https:\/\/(?:www\.)?dshdesktop\.com\/(?:#download|zh\/)/)
+      expect(readme).toMatch(/\[[^\]]+\]\(https:\/\/(?:www\.)?dshdesktop\.com\/(?:[a-z]{2}\/)?(?:#download)?\)/)
       expect(readme).not.toContain('| Platform | Package | Download |')
       expect(readme).not.toContain('| 平台 | 安装包 | 下载 |')
       expect(readme).not.toContain('Coming soon')
       expect(readme).not.toContain('即将发布')
-      expect(readme).toContain('https://github.com/dataelement/dsh-desktop/releases')
-      expect(readme).toContain('**Pre-release**')
       for (const asset of releaseAssets) {
         expect(readme).not.toContain(`releases/latest/download/${asset}`)
       }
@@ -605,9 +592,10 @@ describe('prerelease parity workflow', () => {
   const load = () =>
     readFile(path.join(projectRoot, '.github/workflows/release.yml'), 'utf8')
 
-  it('replaces the windows-only prerelease input with a general one', async () => {
+  it('uses a single version input for all dispatch modes', async () => {
     const yml = await load()
-    expect(yml).toContain('prerelease_tag:')
+    expect(yml).toContain('version:')
+    expect(yml).not.toContain('prerelease_tag:')
     expect(yml).not.toContain('windows_prerelease_tag')
     expect(yml).not.toContain('Publish validated Windows development pre-release')
   })
@@ -633,21 +621,21 @@ describe('prerelease parity workflow', () => {
     expect(yml).toContain('  - signed')
     expect(yml).toContain('  - prerelease')
     expect(yml).toContain('validate-dispatch:')
-    expect(yml).toContain('signed mode requires signed_version')
+    expect(yml).toContain('requires a non-v semver version')
     expect(windowsIf).toContain("inputs.target == 'all' || inputs.target == 'windows'")
     expect(windowsIf).not.toContain('prerelease_tag')
     expect(signWindows).toContain("inputs.mode == 'signed'")
     expect(signWindows).toContain("inputs.mode == 'prerelease'")
     expect(publishJob).toContain("startsWith(github.ref, 'refs/tags/v')")
-    expect(publishJob).toContain("inputs.prerelease_tag == ''")
+    expect(publishJob).toContain("inputs.version == ''")
     expect(publishPrerelease).toContain("inputs.mode == 'prerelease'")
     expect(publishPrerelease).toContain("inputs.target == 'all'")
-    expect(publishPrerelease).toContain("inputs.prerelease_tag != ''")
+    expect(publishPrerelease).toContain("inputs.version != ''")
     expect(
       yml.match(
-        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.signed_version \}\}"/g
+        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.version \}\}"/g
       )
-    ).toHaveLength(3)
+    ).toHaveLength(6)
   })
 
   it('mirrors a prerelease to an isolated ModelScope directory', async () => {
@@ -658,7 +646,9 @@ describe('prerelease parity workflow', () => {
   it('parametrises the Windows smoke test executable', async () => {
     const yml = await load()
     expect(yml).toContain('SMOKE_EXE')
-    expect(yml).toContain('SMOKE_USERDATA')
+    const acceptance = await readFile(path.join(projectRoot, 'scripts/verify/check-workbench-install.mjs'), 'utf8')
+    expect(acceptance).toContain('workbenchInstallIsolation(process.platform, isolationRoot, process.env)')
+    expect(acceptance).toContain('await verifyIsolatedProfile()')
   })
 })
 
@@ -694,7 +684,8 @@ describe('AI-organized GitHub release body', () => {
     const yml = await load()
     expect(yml).toContain('RELEASE_NOTES_MODEL: gpt-6-luna')
     expect(yml).not.toContain('gpt-5.6-sol')
-    expect(yml.match(/--model "\$RELEASE_NOTES_MODEL"/g)).toHaveLength(3)
+    // Three detailed notifications plus the separate, fail-closed popup summary.
+    expect(yml.match(/--model "\$RELEASE_NOTES_MODEL"/g)).toHaveLength(4)
     expect(yml.match(/2>"\$error_log"/g)).toHaveLength(3)
     expect(yml).not.toContain('2>/dev/null')
     expect(yml.match(/sed -n '1,20\{s\/\^\/copilot: \/;p;\}'/g)).toHaveLength(3)

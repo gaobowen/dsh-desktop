@@ -3,6 +3,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
 import { patchPath, projectRoot } from './patch-path'
+import { DESKTOP_PRODUCT_PATCH } from '../src/main/shell/product-patch'
 
 const profileConfigTags = [
   {
@@ -13,7 +14,7 @@ const profileConfigTags = [
 
 async function readProfilePatch(): Promise<{ name?: string; insert?: { name?: string }[] }[]> {
   return parseYaml(
-    await readFile(path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'), 'utf8'),
+    `${await readFile(path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'), 'utf8')}\n${DESKTOP_PRODUCT_PATCH}`,
     { customTags: profileConfigTags }
   ) as { name?: string; insert?: { name?: string }[] }[]
 }

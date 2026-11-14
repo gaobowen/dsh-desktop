@@ -26,8 +26,8 @@ C:\Users\Administrator\DSH Desktop\Temporary Chats\chat-20260915T010203Z-ab12cd3
 
 ## 实现边界
 
-- Electron Main 在 `temporary-chat:create-workspace` IPC 中创建目录，并校验请求来自主窗口。
-- Preload 只暴露 `createTemporaryChatWorkspace()` 窄接口，不向网页开放 Node.js 文件系统能力。
+- Electron Main 在 `dsh-desktop:temporary-chat-create` IPC 中创建目录，并校验请求来自可信应用页的主窗口、主 frame。入口在 `src/main/shell/app.ts`，目录逻辑在 `src/main/temporary-chat.ts`。
+- `src/preload/app.ts` 只向普通应用页暴露 `createTemporaryChatWorkspace()` 窄接口，不向网页开放 Node.js 文件系统能力；Safe Mode 不提供该入口。
 - `dsh-client-ui-sidebar` 将全局“新会话”切换为临时会话入口。
 - `dsh-client-ui-conversation` 继续使用上游标准会话输入框，仅将临时工作区名称显示为“临时会话”。
 - `dsh-client-ui-workspace` 创建并注册临时工作区，并按目录路径将其会话聚合到专属分区。
@@ -36,7 +36,7 @@ C:\Users\Administrator\DSH Desktop\Temporary Chats\chat-20260915T010203Z-ab12cd3
 
 ## 上游升级检查
 
-`v0.12.1` / Harness `0.2.1-rc.2` 的迁移记录见 [升级说明](./upstream-v0.12.1-upgrade.zh.md)。
+当前基线为 `v0.14.0` / Harness `0.2.2-rc.1`，迁移边界见 [开发说明](./development.md#fork-v0140-migration-boundary-2026-11-14)。旧版记录见 [v0.12.1 升级说明](./upstream-v0.12.1-upgrade.zh.md)。
 新版 `startSession` 的草稿参数继续保留；启用工作台并接管新会话时，临时会话入口先交给该处理器。
 普通空工作区遵循上游隐藏规则，临时会话分组作为创建入口保留。
 

@@ -148,16 +148,16 @@ describe('temporary chat workspaces', () => {
 
   it('wires eager Session creation, the standard composer, and the dedicated sidebar group', async () => {
     const [main, preload, workspacePatch, conversationPatch, sidebarPatch] = await Promise.all([
-      readFile(path.join(projectRoot, 'src/main/index.ts'), 'utf8'),
-      readFile(path.join(projectRoot, 'src/preload/index.ts'), 'utf8'),
+      readFile(path.join(projectRoot, 'src/main/shell/app.ts'), 'utf8'),
+      readFile(path.join(projectRoot, 'src/preload/app.ts'), 'utf8'),
       readFile(patchPath('@deepseek-ai/dsh-client-ui-workspace'), 'utf8'),
       readFile(patchPath('@deepseek-ai/dsh-client-ui-conversation'), 'utf8'),
       readFile(patchPath('@deepseek-ai/dsh-client-ui-sidebar'), 'utf8')
     ])
 
-    expect(main).toContain("ipcMain.handle('temporary-chat:create-workspace'")
-    expect(main).toContain('assertTrustedMainWindowEvent(event)')
-    expect(preload).toContain("ipcRenderer.invoke('temporary-chat:create-workspace')")
+    expect(main).toContain('ipcMain.handle(DESKTOP_IPC.temporaryChatCreate')
+    expect(main).toContain('assertMain(event)')
+    expect(preload).toContain('ipcRenderer.invoke(DESKTOP_IPC.temporaryChatCreate)')
     expect(workspacePatch).toContain('TEMPORARY_CHAT_GROUP_KEY')
     expect(workspacePatch).toContain('"group.temporary": "临时会话"')
     expect(workspacePatch).toContain('async createTemporarySession()')

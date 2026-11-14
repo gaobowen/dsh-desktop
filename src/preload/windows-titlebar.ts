@@ -11,7 +11,9 @@ interface TitlebarLayoutMountOptions {
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
 }
 
-/** Harness reads this marker while creating its first layout frame. */
+/** Harness reads this marker while creating its first layout frame.
+ * Its Windows-named seam is also used for the Linux overlay; data-platform stays Linux.
+ */
 export function markWindowsTitlebar(document: Document): void {
   const apply = (root: HTMLElement): void => {
     root.dataset.windowsTitlebar = ''
@@ -34,7 +36,7 @@ export function markWindowsTitlebar(document: Document): void {
 }
 
 /**
- * Windows caption layout. Harness 0.1.7 owns the caption row on its pages
+ * Windows/Linux caption layout. Harness 0.1.7 owns the caption row on its pages
  * (AppFrame reserves it, paints it and makes it draggable) once the marker is
  * set; Desktop adds the caption menubar in the upstream seat, a drag strip for
  * its own local pages, and releases the drag area while a dialog is open.
@@ -44,6 +46,8 @@ export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions):
   markWindowsTitlebar(document)
   if (!document.body) return
 
+  const standalone = document.location.protocol === 'file:'
+  document.body.toggleAttribute('data-dsh-standalone-titlebar', standalone)
   installLayout(document)
   if (document.location.protocol === 'file:') installDragRegion(document)
   trackModals(document)
@@ -72,6 +76,15 @@ function installLayout(document: Document): void {
       box-sizing: border-box !important;
       height: 100% !important;
       padding-top: 0 !important;
+    }
+    /* Local recovery pages do not have Harness AppFrame to reserve a caption
+       row. Keep their logo/actions below both the menu and native controls. */
+    body.dsh-desktop-windows-titlebar-layout[data-dsh-standalone-titlebar] {
+      padding-top: ${WINDOWS_TITLEBAR_HEIGHT}px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout[data-dsh-standalone-titlebar] > .shell {
+      height: 100% !important;
+      min-height: 0 !important;
     }
     body.dsh-desktop-windows-titlebar-layout > #root {
       height: 100% !important;

@@ -509,7 +509,7 @@ describe('VinaRouter package wiring', () => {
   it('mounts the Host plugin and exposes setup and settings client surfaces', async () => {
     const root = join(import.meta.dirname, '..')
     const [composition, host, client, manifest, dshPatch] = await Promise.all([
-      readFile(join(root, 'build', 'dsh-desktop.patch.yml'), 'utf8'),
+      readFile(join(root, 'src/main/shell/product-patch.ts'), 'utf8'),
       readFile(join(root, 'packages', 'dsh-desktop-vinabot', 'index.js'), 'utf8'),
       readFile(join(root, 'packages', 'dsh-desktop-vinabot', 'client.js'), 'utf8'),
       readFile(join(root, 'package.json'), 'utf8'),

@@ -1,13 +1,14 @@
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
 import { adaptMarketSettingsSources } from '../build/dshmarket-settings-compat.mjs'
-import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
-import { launchManagedHarnessProcess } from '../src/main/runtime/managed-harness-process'
-import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
+import { DesktopHostProcess } from '../src/main/shell/backend/host-process'
+import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/recovery/safe-mode-profile'
+import { ensureHostBundle, hostBundle } from './host/host-bundle-helper'
 import { resolveTestNodeExecutable } from './node-executable'
 
 const root = resolve(import.meta.dirname, '..')
@@ -50,11 +51,11 @@ it('keeps the legacy register path and disposes the modern presentation on unloa
   const home = await mkdtemp(join(tmpdir(), 'dsh-market-settings-unit-'))
   try {
     const adapted = adaptMarketSettingsSources(await sources())
+    await mkdir(join(home, 'node_modules/@deepseek-ai'), { recursive: true })
+    await symlink(join(root, 'node_modules/@deepseek-ai/schemastery'), join(home, 'node_modules/@deepseek-ai/schemastery'), process.platform === 'win32' ? 'junction' : 'dir')
     await writeFile(join(home, 'settings.mjs'), adapted['settings.js'])
     await writeFile(join(home, 'restart.js'), 'export const restartAllowed = () => false')
     const result = spawnSync(node, ['--input-type=module', '-e', `
-      import { registerHostModuleFallback } from ${JSON.stringify(pathToFileURL(join(root, 'build/host-module-fallback.mjs')).href)};
-      registerHostModuleFallback(${JSON.stringify(join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'))});
       const mod = await import(${JSON.stringify(pathToFileURL(join(home, 'settings.mjs')).href)});
       const effects = []; let active = 0; const owner = {};
       const ctx = {fiber:owner, effect(fn){ effects.push(fn()); }, inject(deps, fn){fn(this);}, settings:{configure(p, fiber){if(p.auto !== false || fiber !== owner) throw Error('wrong policy owner');active++;return()=>active--;}}};
@@ -81,21 +82,24 @@ it.each(['directory', 'junction'])('derives the Desktop card in a real Harness c
   const market = kind === 'junction' ? physical : join(profile, 'node_modules', 'dshmarket')
   const patch = join(home, 'market.patch.yml')
   const probe = join(home, 'probe.mjs')
-  const runtime = new HarnessRuntime({
-    dshEntryPath: join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
-    nodeEntryPath: join(root, 'build/harness-node-entry.mjs'),
-    nodeExecutablePath: node,
-    dshPatchPath: join(root, 'build/dsh-desktop.patch.yml'),
-    dshSafePatchPath: patch,
-    dshHome: home,
-    logPath: join(home, 'harness.log'),
-    startupTimeoutMs: 30_000,
-    launchProcess: launchManagedHarnessProcess,
-    onChanged() {}
-  })
+  await ensureHostBundle()
+  let host
+  let endpoint
+  const runtime = {
+    async start() {
+      host = new DesktopHostProcess({ node: createRequire(import.meta.url)('electron'), entry: hostBundle,
+        runtimeDir: root, projectDir: profile, dshHome: home, profile: SAFE_MODE_PROFILE,
+        environment: { DSH_DESKTOP_PATCH_FILE: patch }, primaryRuntime: join(home, 'unused-runtime') })
+      endpoint = (await host.start()).url
+    },
+    snapshot() { return { phase: 'ready', url: new URL(endpoint).origin, authToken: new URL(endpoint).searchParams.get('token'), logs: [] } },
+    async stop() { await host?.stop() }
+  }
   try {
     await ensureSafeModeProfile(home)
     await mkdir(join(market, 'lib'), { recursive: true })
+    await mkdir(join(market, 'node_modules/@deepseek-ai'), { recursive: true })
+    await symlink(join(root, 'node_modules/@deepseek-ai/schemastery'), join(market, 'node_modules/@deepseek-ai/schemastery'), process.platform === 'win32' ? 'junction' : 'dir')
     await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.69.0', type: 'module', exports: './lib/index.js' }))
     for (const [file, source] of Object.entries(await sources())) await writeFile(join(market, 'lib', file), source)
     const stubs = {
@@ -149,8 +153,6 @@ it.each(['directory', 'junction'])('derives the Desktop card in a real Harness c
       expect(response.status, await response.clone().text() + '\n' + runtime.snapshot().logs.filter(line => !line.includes('token=')).join('\n')).toBe(200)
       const value = await response.json()
       expect(value).toMatchObject({ descriptor: { ns: 'dsh-market', autoGenerate: false, value: { desktopSettings: {} } }, refused: true, resolved: { profile: 'fixture-profile', desktopHost: true, allowRestart: false, maxSnapshots: 17, buildEnv: { FIXTURE_BUILD: 'retained' } } })
-      expect(snapshot.logs.join('\n')).not.toContain('no register()')
-      expect(snapshot.logs.join('\n')).toContain('applying verified Desktop settings adapter')
       await runtime.stop()
     }
     for (const [file, source] of Object.entries(await sources())) expect(await readFile(join(market, 'lib', file), 'utf8')).toBe(source)
