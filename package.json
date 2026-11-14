@@ -401,8 +401,16 @@
         "to": "harness-node-entry.mjs"
       },
       {
+        "from": "build/harness-parent-lifeline.mjs",
+        "to": "harness-parent-lifeline.mjs"
+      },
+      {
         "from": "build/host-module-fallback.mjs",
         "to": "host-module-fallback.mjs"
+      },
+      {
+        "from": "build/dshmarket-settings-compat.mjs",
+        "to": "dshmarket-settings-compat.mjs"
       },
       {
         "from": "build/packaged-pnpm-invocation.mjs",

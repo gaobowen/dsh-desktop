@@ -152,6 +152,18 @@ Responses 路由中的模型会声明 `low`、`medium`、`high`、`xhigh`、`max
 
 三种协议的默认推理等级统一为 `high`。模型接入完成或旧配置升级后，聊天输入框默认显示并选中 `High`；用户仍可按会话切换到该协议支持的其他档位。
 
+### 手工新增模型与能力补全
+
+Harness `0.2.1-rc.2` 的通用模型设置页可能只保存 `{ id }`。对于其内置目录之外的中转站模型，这不等于继承路由的推理能力：缺少 `reasoningEfforts` 时会被当作非推理模型，而路由默认 `reasoning: high` 会在本地触发 `UNSUPPORTED_REASONING_EFFORT`，请求尚未发到中转站。图片输入也需要独立声明 `input`。
+
+VinaRouter Host 插件在启动且 Loader 就绪后，为三个受管路由中符合上述系列/版本策略的模型补齐缺失的 `reasoningEfforts` 和 `input`。普通模型按路由协议补全档位；`glm-5.3` 仍仅支持文本。该过程使用设置服务的 revision 校验和字段级修改，重复执行不产生额外配置修改。
+
+通用模型设置页手工新增模型后需重启一次客户端完成补全；通过 VinaRouter 向导添加则直接保存完整能力。不要在 `settings/document-updated` 或 `loader/volatile-update` 回调里直接补写配置：它们可能仍处于原配置的 HMR 事务上下文，新版拒绝嵌套事务；仅改成 Promise 或定时器也不会自动清除异步事务上下文。
+
+仅补缺失字段：显式的 `reasoningEfforts: false`、自定义档位映射、非空输入类型、路由默认强度、模型其他配置以及非 VinaRouter 提供方均保留。上游 schema 会把省略的 `input` 变成空数组；空数组在 pi-ai 中也表示继承，因此一并补齐。不改凭据、模型选择或会话记录。升级修复后重启开发客户端即可处理已有配置，无需重新登录。
+
+回归见 `test/vinabot-integration.test.ts`（缺失字段、三种协议、幂等性和显式值保留）及 `test/vinabot-runtime.test.ts`（真实 Harness 中手工追加模型、启动补全后的模型能力、持久化和 Responses 请求的 `reasoning.effort`）。运行时测试使用临时 Profile 和模拟中转站，不调用真实账号。
+
 由于部分第三方模型只在运行时暴露协议能力，向导对非 Claude、OpenAI 风格文本模型采用乐观 Responses 策略。如果某个模型实际不接受 `/v1/responses`，请在重新配置页面把该模型切换为 Chat Completions。
 
 ## 安全边界

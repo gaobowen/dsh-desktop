@@ -72,6 +72,7 @@ export declare class VinabotClient {
 
 export declare class VinabotIntegration {
   constructor(ctx: any, options?: VinabotIntegrationOptions)
+  /** Fill missing managed model capabilities and the route's High default at startup; preserve explicit values. */
   ensureDefaultReasoningEffort(): Promise<void>
   status(): Promise<Record<string, unknown>>
   login(input: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>>

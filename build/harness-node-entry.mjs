@@ -3,6 +3,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerHostModuleFallback } from './host-module-fallback.mjs'
+import { registerMarketSettingsCompatibility } from './dshmarket-settings-compat.mjs'
 import { packagedArchiveRoot, registerOfficeEngineResolution } from './office-engine-resolution.mjs'
 import {
   PACKAGED_PNPM_ENTRY_ENV,
@@ -10,6 +11,9 @@ import {
   buildPackagedPnpmInvocation
 } from './packaged-pnpm-invocation.mjs'
 import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs'
+import { installParentLifeline } from './harness-parent-lifeline.mjs'
+
+installParentLifeline()
 
 // On macOS Harness runs inside an Electron utility process (TCC responsibility
 // isolation), so `process.execPath` and `argv0` point at the Electron helper
@@ -99,6 +103,7 @@ if (!dshEntryPath) {
       : join(resources, '..', '.build', 'office-runtime')
     process.env.DSH_DESKTOP_OFFICE_CLI = join(resources, 'office-cli.mjs')
     registerHostModuleFallback(dshEntryPath)
+    registerMarketSettingsCompatibility(dshEntryPath)
     // Packages load through app.asar; the Office engine must resolve to its
     // unpacked directory so the OS can spawn it.
     registerOfficeEngineResolution(dshEntryPath)

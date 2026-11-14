@@ -68,10 +68,16 @@ function fakeContext(): FakeContext & {
         expect(expectedRevision).toBe(context.revision)
         for (const operation of operations) {
           expect(operation.path[0]).toBe('providers')
-          const provider = operation.path[1]
-          if (provider === undefined) throw new Error('provider route is missing')
-          if (operation.op === 'set') context.section.providers[provider] = operation.value
-          if (operation.op === 'unset') delete context.section.providers[provider]
+          let target: object = context.section
+          for (const key of operation.path.slice(0, -1)) {
+            const child: unknown = Reflect.get(target, key)
+            if (child === null || typeof child !== 'object') throw new Error('setting parent is missing')
+            target = child
+          }
+          const key = operation.path.at(-1)
+          if (key === undefined) throw new Error('setting path is missing')
+          if (operation.op === 'set') Reflect.set(target, key, operation.value)
+          if (operation.op === 'unset') Reflect.deleteProperty(target, key)
         }
         context.revision += 1
       }
@@ -202,6 +208,61 @@ describe('VinaRouter setup flow', () => {
     expect(context.section.providers[VINABOT_ANTHROPIC_PROVIDER]).toMatchObject({
       reasoning: 'low'
     })
+  })
+
+  it('fills missing capabilities on manually added VinaRouter models even when High is already configured', async () => {
+    const context = fakeContext()
+    context.section.providers[VINABOT_PROVIDER] = {
+      api: 'openai-responses', reasoning: 'high',
+      models: [{ id: 'gpt-6.1-sol', name: 'Custom label', maxTokens: 4096, input: [] }]
+    }
+    context.section.providers[VINABOT_ANTHROPIC_PROVIDER] = {
+      api: 'anthropic-messages', reasoning: 'low', models: [{ id: 'claude-fable-5' }]
+    }
+    context.section.providers[VINABOT_CHAT_PROVIDER] = {
+      api: 'openai-completions', models: [{ id: 'glm-5.3' }, { id: 'glm-5.3-flash' }]
+    }
+    const integration = new VinabotIntegration(context, { anonymousId: '12345678' })
+
+    await integration.ensureDefaultReasoningEffort()
+
+    expect(context.section.providers[VINABOT_PROVIDER]).toMatchObject({
+      reasoning: 'high', models: [{
+        id: 'gpt-6.1-sol', name: 'Custom label', maxTokens: 4096,
+        input: ['text', 'image'], reasoningEfforts: VINABOT_RESPONSES_REASONING_EFFORTS
+      }]
+    })
+    expect(context.section.providers[VINABOT_ANTHROPIC_PROVIDER]).toMatchObject({
+      reasoning: 'low', models: [{ reasoningEfforts: VINABOT_ANTHROPIC_REASONING_EFFORTS }]
+    })
+    expect(context.section.providers[VINABOT_CHAT_PROVIDER]).toMatchObject({
+      reasoning: 'high', models: [
+        { input: ['text'], reasoningEfforts: VINABOT_CHAT_REASONING_EFFORTS },
+        { input: ['text', 'image'], reasoningEfforts: VINABOT_CHAT_REASONING_EFFORTS }
+      ]
+    })
+    const revision = context.revision
+    await integration.ensureDefaultReasoningEffort()
+    expect(context.revision).toBe(revision)
+    expect(context.secret).toBeUndefined()
+  })
+
+  it('preserves explicit capabilities, unrecognized models, and other providers', async () => {
+    const context = fakeContext()
+    const models = [
+      { id: 'gpt-6.1-sol', input: ['text'], reasoningEfforts: false },
+      { id: 'gpt-6-astra', input: ['text', 'image'], reasoningEfforts: { high: 'gateway-high' } },
+      { id: 'unknown-custom-model' }
+    ]
+    context.section.providers[VINABOT_PROVIDER] = { api: 'openai-responses', reasoning: 'low', models }
+    context.section.providers.other = { api: 'openai-responses', models: [{ id: 'gpt-6.1-sol' }] }
+    const previous = structuredClone(context.section)
+    const integration = new VinabotIntegration(context, { anonymousId: '12345678' })
+
+    await integration.ensureDefaultReasoningEffort()
+
+    expect(context.section).toEqual(previous)
+    expect(context.revision).toBe(0)
   })
 
   it('logs in, provisions a device token, stores it Host-side, and selects the model', async () => {

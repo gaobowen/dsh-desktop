@@ -11,6 +11,7 @@ import { prepareHostDisabledPluginsPatch } from '../state/host-disabled-plugins'
 import { prepareHostPluginSourcesPatch } from '../state/host-plugin-sources'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
 import { removeStaleWriterLocks } from './stale-writer-locks'
+import { stopHarnessChild } from './stop-harness-child'
 import { inspectStartupConfiguration, repairStartupConfig, validModelEndpoint } from '../state/startup-config-recovery'
 
 export interface HarnessRuntimeOptions {
@@ -49,6 +50,8 @@ export interface HarnessChildProcess extends EventEmitter {
   readonly stdout: NodeJS.ReadableStream
   readonly stderr: NodeJS.ReadableStream
   readonly exitCode: number | null
+  /** Close the owner's lifeline so Harness can dispose before an OS kill. */
+  requestShutdown?(): boolean
   kill(signal?: NodeJS.Signals): boolean
 }
 
@@ -322,6 +325,7 @@ export function buildHarnessSpawnOptions(
     DSH_DESKTOP_PNPM_ENTRY: _pnpmEntry,
     DSH_DESKTOP_PNPM_RUNNER: _pnpmRunner,
     DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: _hideConsoleBootstrap,
+    DSH_DESKTOP_PARENT_LIFELINE: _parentLifeline,
     ...parentEnvironment
   } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -450,6 +454,8 @@ export function isHarnessStartupProbeHealthy(
 
 export class HarnessRuntime {
   private child?: HarnessChildProcess
+  private stopping?: Promise<void>
+  private lifecycleVersion = 0
   private logStream?: WriteStream
   private phase: RuntimePhase = 'idle'
   private message = 'Harness is not running.'
@@ -490,7 +496,10 @@ export class HarnessRuntime {
   get launchAttemptId(): number { return this.launchAttempts }
 
   async start(launchDirectory: string, profile = 'web'): Promise<void> {
-    await this.stop()
+    const stopped = this.stop()
+    const lifecycleVersion = this.lifecycleVersion
+    await stopped
+    if (lifecycleVersion !== this.lifecycleVersion) return
     this.launchAttempts++
     this.logRemainders.stdout = ''
     this.logRemainders.stderr = ''
@@ -578,6 +587,9 @@ export class HarnessRuntime {
 
     const preferredPort = this.options.preferredPort ?? DEFAULT_HARNESS_PORT
     const { port, usedPreferredPort } = await reserveLoopbackPort(preferredPort)
+    // stop()/another start() may have arrived while profile preparation or
+    // port reservation was awaiting. Never spawn after its owner quit.
+    if (lifecycleVersion !== this.lifecycleVersion) return
     const url = `http://127.0.0.1:${port}`
     const args = buildNodeArguments(
       this.options.nodeEntryPath,
@@ -704,7 +716,14 @@ ${cause}`
     this.setState('ready', 'Harness is ready.')
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    this.lifecycleVersion++
+    if (this.stopping) return this.stopping
+    this.stopping = this.stopCurrentChild().finally(() => { this.stopping = undefined })
+    return this.stopping
+  }
+
+  private async stopCurrentChild(): Promise<void> {
     const child = this.child
     if (!child) {
       this.closeLog()
@@ -714,7 +733,13 @@ ${cause}`
 
     this.setState('stopping', 'Stopping Harness…')
     this.child = undefined
-    await this.stopChild(child)
+    try {
+      await this.stopChild(child)
+    } catch (error) {
+      this.child = child
+      this.setState('failed', 'Harness could not be stopped; check the runtime log.')
+      throw error
+    }
     this.closeLog()
     this.url = undefined
     this.launchToken = undefined
@@ -722,16 +747,7 @@ ${cause}`
   }
 
   private async stopChild(child: HarnessChildProcess): Promise<void> {
-    if (child.exitCode !== null) return
-    const exitPromise = new Promise<boolean>((resolve) =>
-      child.once('exit', () => resolve(true))
-    )
-    child.kill('SIGTERM')
-    const exited = await Promise.race([
-      exitPromise,
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4_000))
-    ])
-    if (!exited && child.exitCode === null) child.kill('SIGKILL')
+    await stopHarnessChild(child, (line) => this.writeLog(line))
   }
 
   private setState(

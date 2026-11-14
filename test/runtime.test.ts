@@ -177,6 +177,7 @@ describe('Harness launch contract', () => {
       'win32',
       {
         ELECTRON_RUN_AS_NODE: '1',
+        DSH_DESKTOP_PARENT_LIFELINE: 'ipc',
         PATH: 'fallback-path',
         Path: 'windows-path'
       }
@@ -202,6 +203,7 @@ describe('Harness launch contract', () => {
     expect(options.env).not.toHaveProperty('DSH_DESKTOP_PNPM_ENTRY')
     expect(options.env).not.toHaveProperty('DSH_DESKTOP_PNPM_RUNNER')
     expect(options.env).not.toHaveProperty('DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP')
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PARENT_LIFELINE')
   })
 
   it('tells the Harness which packaged pnpm to run instead of PATH pnpm.cmd', () => {

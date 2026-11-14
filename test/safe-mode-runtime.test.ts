@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { launchManagedHarnessProcess } from '../src/main/runtime/managed-harness-process'
 import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -39,7 +39,7 @@ registerHooks({ resolve(specifier, context, next) {
     dshHome: home,
     logPath: join(home, logName),
     startupTimeoutMs: 30_000,
-    launchProcess: (executable, args, options) => spawn(executable, ['--import', pathToFileURL(hook).href, ...args], options),
+    launchProcess: (executable, args, options) => launchManagedHarnessProcess(executable, ['--import', pathToFileURL(hook).href, ...args], options),
     onChanged() {}
   })
   // Positive control: the same safe Profile with a PPT-only overlay must fail.
@@ -93,6 +93,10 @@ registerHooks({ resolve(specifier, context, next) {
     expect(envelope.result?.value?.sessionId).toBeTruthy()
     // Recovery uses its own overlay and never edits the normal composition.
     expect(await readFile(normalPatch, 'utf8')).not.toContain("name: 'dsh-ppt-composer'")
+    const stopping = recovered.stop()
+    expect(recovered.stop()).toBe(stopping)
+    await stopping
+    expect(recovered.snapshot().phase).toBe('idle')
   } finally {
     await broken.stop()
     await recovered.stop()

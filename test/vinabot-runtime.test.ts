@@ -15,6 +15,7 @@ it('configures all VinaRouter protocols and retains High after a Harness 0.2.1 r
   const home = await mkdtemp(join(tmpdir(), 'dsh-vinabot-runtime-'))
   const patch = join(home, 'vinabot.patch.yml')
   const relayStub = join(home, 'relay-stub.mjs')
+  const capabilityProbe = join(home, 'capability-probe.mjs')
   const runtime = new HarnessRuntime({
     dshEntryPath: join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
     nodeEntryPath: join(root, 'build/harness-node-entry.mjs'),
@@ -29,7 +30,32 @@ it('configures all VinaRouter protocols and retains High after a Harness 0.2.1 r
   })
   try {
     await ensureSafeModeProfile(home)
-    await writeFile(patch, '- insert:\n    - id: dsh-desktop-vinabot\n      name: dsh-desktop-vinabot\n')
+    await writeFile(patch, `- insert:
+    - id: dsh-desktop-vinabot
+      name: dsh-desktop-vinabot
+    - id: capability-probe
+      name: ${pathToFileURL(capabilityProbe).href}
+`)
+    await writeFile(capabilityProbe, `
+export const inject = ['connection', 'settings', 'llm'];
+export function apply(ctx) {
+  ctx.connection.fetch.register({ path: '/api/fixture/add-model', methods: ['POST'], requestBody: 'buffered', fetch: async () => {
+    const descriptor = ctx.settings.describe().find(entry => entry.ns === 'llm-pi-ai');
+    const profile = descriptor.value.providers.vinabot;
+    await ctx.settings.mutate('llm-pi-ai', [{op:'set', path:['providers','vinabot','models'], value:[...profile.models, {id:'gpt-6.1-sol'}]}], descriptor.revision);
+    return Response.json({ok:true});
+  }});
+  ctx.connection.fetch.register({ path: '/api/fixture/model', methods: ['GET'], requestBody: 'buffered', fetch: async () => {
+    try { return Response.json(await ctx.llm.resolveModelInfo('vinabot', 'gpt-6.1-sol')); }
+    catch(error) { return Response.json({error:error.message, code:error.code}, {status:500}); }
+  }});
+  ctx.connection.fetch.register({ path: '/api/fixture/dispatch', methods: ['POST'], requestBody: 'buffered', fetch: async () => {
+    const chunks = [];
+    for await (const chunk of ctx.llm.stream({provider:'vinabot', model:'gpt-6.1-sol', reasoningEffort:'high', messages:[{role:'user',content:[{type:'text',text:'fixture'}]}]})) chunks.push(chunk);
+    return Response.json({request:globalThis.__vinabotRequest, chunks});
+  }});
+}
+`)
     await writeFile(relayStub, `
 const realFetch = globalThis.fetch;
 let tokenName;
@@ -51,6 +77,13 @@ globalThis.fetch = async (input, init) => {
     { id: 'glm-5.3-flash', supported_endpoint_types: ['openai'] }
   ]);
   if (url.pathname === '/api/user/auth/logout') return json({});
+  if (url.pathname === '/v1/responses') {
+    const body = JSON.parse(init.body);
+    globalThis.__vinabotRequest = {model:body.model, reasoning:body.reasoning};
+    // A deliberate relay refusal proves dispatch passed the local capability
+    // validator and serialized High; no real account or external API is used.
+    return Response.json({error:{message:'fixture relay reached', type:'invalid_request_error'}}, {status:400});
+  }
   throw new Error('Unexpected relay fixture path: ' + url.pathname);
 };
 `)
@@ -100,6 +133,12 @@ globalThis.fetch = async (input, init) => {
         expect.objectContaining({ id: 'glm-5.3-flash', protocol: 'openai-completions' })
       ])
     })
+    // Reproduce the generic settings page: append a model containing only id
+    // while the route already has reasoning: high, then exercise boot repair.
+    await request('/api/fixture/add-model', {})
+    const beforeRepair = await request('/api/fixture/dispatch', {})
+    expect(beforeRepair.request).toBeUndefined()
+    expect(JSON.stringify(beforeRepair.chunks)).toContain('UNSUPPORTED_REASONING_EFFORT')
     await runtime.stop()
     await runtime.start(home, SAFE_MODE_PROFILE)
     const restarted = runtime.snapshot()
@@ -115,7 +154,25 @@ globalThis.fetch = async (input, init) => {
       credentialConfigured: true,
       selected: { provider: VINABOT_PROVIDER, model: 'gpt-5.6-sol', reasoningEffort: 'high' }
     })
+    await expect.poll(async () => {
+      const result = await fetch(new URL('/api/fixture/model', restarted.url), { headers: { Cookie: newCookie } })
+      return result.json()
+    }, { timeout: 5000 }).toMatchObject({
+      id: 'gpt-6.1-sol', inputModalities: ['text', 'image'],
+      reasoning: { defaultEffort: 'high', efforts: expect.arrayContaining([
+        expect.objectContaining({ id: 'low' }), expect.objectContaining({ id: 'medium' }),
+        expect.objectContaining({ id: 'high' }), expect.objectContaining({ id: 'xhigh' }), expect.objectContaining({ id: 'max' })
+      ]) }
+    })
+    const dispatched = await fetch(new URL('/api/fixture/dispatch', restarted.url), {
+      method: 'POST', headers: { Cookie: newCookie, 'content-type': 'application/json' }, body: '{}'
+    })
+    const dispatch = await dispatched.json()
+    expect(dispatched.status, JSON.stringify(dispatch)).toBe(200)
+    expect(dispatch).toMatchObject({ request: { model: 'gpt-6.1-sol', reasoning: { effort: 'high' } } })
+    expect(JSON.stringify(dispatch)).not.toContain('UNSUPPORTED_REASONING_EFFORT')
     expect(runtime.snapshot().logs.join('\n')).not.toContain('settings.get is not a function')
+    expect(runtime.snapshot().logs.join('\n')).not.toContain('模型能力补全失败')
   } finally {
     await runtime.stop()
     await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

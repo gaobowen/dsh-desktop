@@ -5,7 +5,6 @@ import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { applyMacosWindowBackdrop } from './macos-window-backdrop'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { RepairAgentService, type CrashEvidence } from './repair-agent'
-import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -34,6 +33,7 @@ import {
   prewarmShellEnvironment
 } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
+import { launchManagedHarnessProcess } from './runtime/managed-harness-process'
 import {
   installProfileDependenciesWithDsh,
   removeProfilePluginWithDsh
@@ -3362,7 +3362,7 @@ async function bootstrap(): Promise<void> {
         ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
           disclaim: !developmentBuild
         })
-        : spawn(executablePath, args, options),
+        : launchManagedHarnessProcess(executablePath, args, options),
     onChanged: (snapshot) => {
       desktopDiagnostics?.runtimeChanged(snapshot, () => runtime.flushLog(), runtime.launchAttemptId)
       if (!safeModeVisible && snapshot.phase === 'ready') lastCrashEvidence = undefined
@@ -3732,7 +3732,11 @@ if (isDaemonLaunch(process.env, process.platform)) {
       tray = undefined
       repairAgentService?.dispose()
       repairAgentService = undefined
-      void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
+      void Promise.all([runtime.stop(), mobileBridge?.stop()])
+        .catch((error: unknown) => {
+          runtime.note(`[desktop] shutdown cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
+        })
+        .finally(() => app.quit())
     })
   }
 }

@@ -221,6 +221,16 @@ describe('GitHub release contract', () => {
     })
     expect(harnessNodeEntry).toContain("from './host-module-fallback.mjs'")
     expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/dshmarket-settings-compat.mjs',
+      to: 'dshmarket-settings-compat.mjs'
+    })
+    expect(harnessNodeEntry).toContain("from './dshmarket-settings-compat.mjs'")
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/harness-parent-lifeline.mjs',
+      to: 'harness-parent-lifeline.mjs'
+    })
+    expect(harnessNodeEntry).toContain("from './harness-parent-lifeline.mjs'")
+    expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/packaged-pnpm-invocation.mjs',
       to: 'packaged-pnpm-invocation.mjs'
     })

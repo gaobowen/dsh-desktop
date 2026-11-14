@@ -45,6 +45,13 @@ export const VINABOT_CHAT_REASONING_EFFORTS = Object.freeze({
 
 export const VINABOT_DEFAULT_REASONING_EFFORT = 'high'
 
+function reasoningEffortsForProtocol(protocol) {
+  if (protocol === 'openai-responses') return VINABOT_RESPONSES_REASONING_EFFORTS
+  if (protocol === 'anthropic-messages') return VINABOT_ANTHROPIC_REASONING_EFFORTS
+  if (protocol === 'openai-completions') return VINABOT_CHAT_REASONING_EFFORTS
+  return undefined
+}
+
 export const STATUS_PATH = '/api/dsh-desktop/vinabot/status'
 export const LOGIN_PATH = '/api/dsh-desktop/vinabot/login'
 export const TWO_FACTOR_PATH = '/api/dsh-desktop/vinabot/2fa'
@@ -428,12 +435,29 @@ export class VinabotIntegration {
     const { providers, revision } = this.modelSettings()
     const operations = Object.values(VINABOT_PROVIDER_BY_PROTOCOL).flatMap((provider) => {
       const profile = asObject(providers?.[provider])
-      if (profile === undefined || profile.reasoning !== undefined) return []
-      return [{
-        op: 'set',
-        path: ['providers', provider],
-        value: { ...profile, reasoning: VINABOT_DEFAULT_REASONING_EFFORT }
-      }]
+      if (profile === undefined) return []
+      const edits = []
+      if (profile.reasoning === undefined) {
+        edits.push({ op: 'set', path: ['providers', provider, 'reasoning'], value: VINABOT_DEFAULT_REASONING_EFFORT })
+      }
+      const efforts = reasoningEffortsForProtocol(profile.api)
+      if (efforts !== undefined && Array.isArray(profile.models)) {
+        profile.models.forEach((model, index) => {
+          if (!isAllowedVinabotModel(model)) return
+          // The generic model settings page may add only { id }. Harness 0.2.1
+          // requires explicit capabilities for models outside its own catalog.
+          const path = ['providers', provider, 'models', String(index)]
+          if (model.reasoningEfforts === undefined) {
+            edits.push({ op: 'set', path: [...path, 'reasoningEfforts'], value: { ...efforts } })
+          }
+          // Schemastery materializes an omitted array as []; pi-ai also treats
+          // that as inherited capability, not an explicit text-only choice.
+          if (model.input === undefined || Array.isArray(model.input) && model.input.length === 0) {
+            edits.push({ op: 'set', path: [...path, 'input'], value: inputModalitiesOfModel(model) })
+          }
+        })
+      }
+      return edits
     })
     if (operations.length > 0) {
       await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations, revision)
@@ -639,11 +663,7 @@ export class VinabotIntegration {
     const grouped = new Map()
     for (const selection of selections) {
       const list = grouped.get(selection.protocol) ?? []
-      const reasoningEfforts = selection.protocol === 'openai-responses'
-        ? VINABOT_RESPONSES_REASONING_EFFORTS
-        : selection.protocol === 'anthropic-messages'
-          ? VINABOT_ANTHROPIC_REASONING_EFFORTS
-          : VINABOT_CHAT_REASONING_EFFORTS
+      const reasoningEfforts = reasoningEffortsForProtocol(selection.protocol)
       list.push({
         id: selection.model,
         ...(selection.name === selection.model ? {} : { name: selection.name }),
@@ -801,8 +821,18 @@ export function apply(ctx) {
   const integration = new VinabotIntegration(ctx)
   const connection = Reflect.get(ctx, 'connection')
 
-  ctx.root.loader.await().then(() => integration.ensureDefaultReasoningEffort()).catch((error) => {
-    console.warn('VinaRouter 默认推理等级迁移失败：', error)
+  // Complete restored/manual model entries after the whole profile is active.
+  // Do not write from configuration-change notifications: settings.mutate()
+  // already owns an HMR transaction, and Harness refuses nested transactions.
+  let disposed = false
+  ctx.root.loader.await().then(() => {
+    if (!disposed) return integration.ensureDefaultReasoningEffort()
+  }).catch((error) => {
+    console.warn('VinaRouter 模型能力补全失败：', JSON.stringify({
+      name: error instanceof Error ? error.name : typeof error,
+      code: typeof error?.code === 'string' ? error.code : undefined,
+      at: error instanceof Error ? error.stack?.split('\n')[1]?.trim() : undefined
+    }))
   })
 
   registerJsonRoute(connection, STATUS_PATH, ['GET'], () => integration.status())
@@ -819,5 +849,8 @@ export function apply(ctx) {
     return integration.cancel(await readLocalJson(request))
   })
 
-  ctx.effect(() => () => integration.dispose())
+  ctx.effect(() => () => {
+    disposed = true
+    return integration.dispose()
+  })
 }
