@@ -1,3 +1,4 @@
+import { DEFAULT_LINE_HEIGHT, positive, recommendedTextCapacity, WIDTH_RESERVE } from "./text-capacity.js";
 import { DRAWINGML_PRESET_SHAPES } from "./drawingml-shapes.js";
 import { hasNativeShape, nativeShapeIssue } from "./imported-shape-export.js";
 import { restoreImportedSlides, deduplicatePptxMedia } from "./pptx-package.js";
@@ -56,11 +57,6 @@ function resolvePptdChartSeriesColors(project, value) {
 //#endregion
 //#region lib/types/text-layout.js
 /** Deterministic text-box capacity estimates shared by template references and PPT renderers. */
-const WIDTH_RESERVE = .95;
-const DEFAULT_LINE_HEIGHT = 1.15;
-function positive(value, fallback) {
-	return value !== void 0 && Number.isFinite(value) && value > 0 ? value : fallback;
-}
 function glyphWidth(character) {
 	if (/\p{Mark}/u.test(character)) return 0;
 	if (/\s/u.test(character)) return .33;
@@ -112,13 +108,7 @@ function measureTextLayout(input) {
 * @param lineHeight - Line-height multiplier.
 * @returns Recommended full-width character count.
 */
-function recommendedTextCapacity(width, height, fontSize, lineHeight = DEFAULT_LINE_HEIGHT) {
-	const size = positive(fontSize, 18);
-	const spacing = positive(lineHeight, DEFAULT_LINE_HEIGHT);
-	const charactersPerLine = Math.max(1, Math.floor(Math.max(0, width) * WIDTH_RESERVE / size));
-	const lines = Math.max(1, Math.floor(Math.max(0, height) / (size * spacing)));
-	return Math.max(1, Math.min(1e3, Math.floor(charactersPerLine * lines * .9)));
-}
+
 //#endregion
 //#region lib/types/pptd.js
 /** Local PPTD v2 parser, checker, loader, and native editable PPTX renderer. */

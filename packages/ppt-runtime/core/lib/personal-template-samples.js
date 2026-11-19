@@ -3,7 +3,9 @@ import yaml from 'js-yaml';
 import { JSDOM } from 'jsdom';
 import { markSourceLayout } from './source-layout.js';
 
-export const PERSONAL_TEMPLATE_SAMPLE_VERSION = 1;
+import { PERSONAL_TEMPLATE_SAMPLE_VERSION } from './personal-template-sample-index.js';
+
+export { PERSONAL_TEMPLATE_SAMPLE_VERSION, validPersonalTemplateSamples } from './personal-template-sample-index.js';
 const DRAWING = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const textOf = content => content.paragraphs?.length
   ? content.paragraphs.map(p => p.runs.map(r => r.text ?? '').join('')).join('\n')
@@ -165,13 +167,4 @@ export function createPersonalTemplateSamples(project, profile) {
       representativePages: layouts.filter(page => page.representative).map(page => page.slideNumber)
     } };
   } finally { window.close(); }
-}
-
-export function validPersonalTemplateSamples(samples, count) {
-  return samples?.version === PERSONAL_TEMPLATE_SAMPLE_VERSION && Number.isInteger(samples.simplifiedTextCount) && samples.simplifiedTextCount >= 0
-    && Array.isArray(samples.layouts) && samples.layouts.length === count
-    && samples.layouts.every((page, i) => page?.slideNumber === i + 1 && ['cover', 'agenda', 'section', 'closing', 'content', 'multi-block', 'visual', 'data'].includes(page.role)
-      && ['sample', 'source'].includes(page.content) && typeof page.representative === 'boolean')
-    && Array.isArray(samples.representativePages) && samples.representativePages.length > 0
-    && JSON.stringify(samples.representativePages) === JSON.stringify(samples.layouts.filter(page => page.representative).map(page => page.slideNumber));
 }

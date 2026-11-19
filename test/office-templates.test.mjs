@@ -231,7 +231,7 @@ it('rejects changed resources and stale selections before copying them', async (
   await expect(library.prepare('government-notice', { id: 'government-notice', mode: 'word', revision: 'old' })).rejects.toThrow('selected Office')
 })
 
-it('persists a single document format across restarts and preserves historical PPT files', async () => {
+it('persists a single document format across Office and standalone PPT restarts', async () => {
   const f = await modesFixture(), id = 'session-state'
   await f.modes.select(id, 'word')
   const item = library.entry('government-notice')

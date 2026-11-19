@@ -66,7 +66,8 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
     expect(result.output).not.toContain("Error occurred in handler for 'desktop-titlebar:set-theme'")
     expect(result.output).toContain('FORK-UI-ACCEPTANCE-COMPLETE')
     const evidence = JSON.parse(await readFile(join(temporary, 'evidence.json'), 'utf8')) as unknown
-    expect(evidence).toMatchObject({ configured: true, standardComposer: true, draft: true, high: true, temporaryGroup: true })
+    expect(evidence).toMatchObject({ configured: true, standardComposer: true, draft: true, high: true, temporaryGroup: true,
+      officeModes: ['word', 'excel', 'ppt'] })
     expect(await readdir(join(home, 'DSH Desktop', 'Temporary Chats'))).toHaveLength(1)
   } finally {
     if (cleanExit) await rm(temporary, { recursive: true, force: true })

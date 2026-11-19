@@ -42,6 +42,12 @@ async function verifyRuntime(appRoot) {
   }
 
   const coreRequire = createRequire(path.join(core, 'package.json'))
+  const officeRequire = createRequire(path.join(appRoot, 'node_modules', 'dsh-desktop-office', 'package.json'))
+  const modesEntry = await fs.realpath(officeRequire.resolve('dsh-ppt/office-modes'))
+  if (modesEntry !== await fs.realpath(path.join(core, 'lib', 'office-modes.js'))) {
+    throw new Error('Packaged Word/Excel mode entry does not resolve to the shipped PPT core')
+  }
+  const { createOfficeModes } = await import(pathToFileURL(modesEntry).href)
   if (path.basename(appRoot) === 'app.asar') {
     // Match the Harness entry's native-engine resolution before rendering.
     const { registerOfficeEngineResolution } = await import(pathToFileURL(path.join(path.dirname(appRoot), 'office-engine-resolution.mjs')).href)
@@ -71,6 +77,9 @@ async function verifyRuntime(appRoot) {
   const project = await loadPptdProject(path.join(references, definitions[0].referenceDirectory, 'source'))
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-packaged-office-preview-'))
   try {
+    const modes = createOfficeModes(path.join(temporary, 'office-modes'))
+    await modes.select('packaged-regression', 'word')
+    if ((await modes.state('packaged-regression')).documentMode !== 'word') throw new Error('Packaged Office mode state did not persist')
     const result = await renderOfficeTemplatePreview({ ...project, pages: project.pages.slice(0, 1) }, temporary, 960, 1)
     if (result.engine !== 'libreoffice-pdfium') throw new Error('Packaged Office preview engine mismatch')
     const png = await sharp(path.join(temporary, 'preview', 'pages', 'page-1.png')).metadata()

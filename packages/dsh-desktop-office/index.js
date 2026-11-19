@@ -21,13 +21,12 @@ export async function apply(ctx, config) {
   // gracefully degrade by disabling office features instead of crashing Harness.
   try {
     await workspaceDependencies.resolvePrimaryRuntime(join(config.resources, 'primary-runtime'))
-    // Reuse the state facade, not PPT's plugin activation, in this fork.
     if (config.modesRoot !== undefined) {
       if (typeof config.modesRoot !== 'string' || !isAbsolute(config.modesRoot)) {
         throw new Error('desktop-office: modesRoot must be an absolute path')
       }
-      const { createOfficeModes } = await import('dsh-ppt')
-      ctx.provide('officeModes', createOfficeModes(config.modesRoot))
+      const { createOfficeModes } = await import('dsh-ppt/office-modes')
+      ctx.provide('officeModes', createOfficeModes(config.modesRoot, { legacyDocumentRoot: config.legacyDocumentRoot }))
     }
     await ctx.plugin(workspaceDependencies, { source: join(config.resources, 'primary-runtime') })
     await ctx.plugin(officeSkills, {

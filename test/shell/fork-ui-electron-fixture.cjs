@@ -57,6 +57,22 @@ async function accept() {
   await js('document.querySelector("[contenteditable=true]").focus()')
   await window.webContents.insertText('fixture draft')
   const evidence = await waitFor(() => js(`(() => {const body=document.body.innerText;const editor=document.querySelector('[contenteditable=true]');return editor?.textContent.includes('fixture draft') && /High/.test(body) && document.querySelector('[data-temporary-chat-group="true"]') ? {configured:true,standardComposer:true,draft:true,high:true,temporaryGroup:true}:false})()`), 'High, editable Composer and temporary group')
+  const click = selector => js(`(() => {
+    const button = document.querySelector(${JSON.stringify(selector)});
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`)
+  const visible = selector => js(`!!document.querySelector(${JSON.stringify(selector)})?.getClientRects().length`)
+  await waitFor(() => click('[data-office-mode="word"]'), 'Word mode action')
+  await waitFor(() => visible('[data-office-dock="word"] .dso-card'), 'Word template gallery')
+  await waitFor(() => click('[data-office-mode="excel"]'), 'Excel mode action')
+  await waitFor(async () => await visible('[data-office-dock="excel"] .dso-card')
+    && !await visible('[data-office-dock="word"]'), 'Excel gallery replaces Word')
+  await waitFor(() => click('[data-desktop-ppt]'), 'PPT mode action')
+  await waitFor(async () => await visible('[data-office-ppt-template-panel]')
+    && !await visible('[data-office-dock="excel"]'), 'PPT gallery replaces Excel')
+  evidence.officeModes = ['word', 'excel', 'ppt']
   writeFileSync(join(root, 'evidence.json'), JSON.stringify(evidence))
   await capture(window, 'ui.png')
   console.log('FORK-UI-ACCEPTANCE-COMPLETE')

@@ -40,6 +40,10 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./office-modes": {
+      "types": "./lib/types/office-modes.d.ts",
+      "default": "./lib/office-modes.js"
+    },
     "./pptd": {
       "types": "./lib/types/pptd.d.ts",
       "default": "./lib/pptd.js"

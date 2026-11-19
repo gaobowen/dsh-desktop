@@ -17,7 +17,7 @@ function hasEnterprisePlugin(): boolean {
  * Desktop profile overlay. Analytics and the official account page stay off.
  * The official sidebar brand is replaced by the product client UI.
  * The normal profile also mounts workbenches, the plugin market installer,
- * Office, and VinaRouter. PPT stays unmounted in this fork.
+ * Office, PPT Composer, and VinaRouter.
  * Safe Mode keeps the account and brand overlay only.
  */
 const DESKTOP_PRODUCT_PATCH_BASE = `- id: desktop-product-telemetry
@@ -59,14 +59,23 @@ const DESKTOP_OFFICE_ROW = `    - id: dsh-desktop-office
       config:
         resources: !!js process.env.DSH_DESKTOP_OFFICE_RESOURCES
         cli: !!js process.env.DSH_DESKTOP_OFFICE_CLI
-        modesRoot: !!js dshHomePath('dsh-ppt')
+        modesRoot: !!js dshHomePath('kimi-ppt')
+        legacyDocumentRoot: !!js dshHomePath('dsh-ppt')
+`
+
+const DESKTOP_PPT_ROW = `    - id: dsh-ppt-composer
+      name: dsh-ppt-composer
+      config:
+        root: !!js dshHomePath('kimi-ppt')
+        legacyDocumentRoot: !!js dshHomePath('dsh-ppt')
+        provideOfficeModes: false
 `
 
 export const DESKTOP_SAFE_PRODUCT_PATCH = DESKTOP_PRODUCT_PATCH_BASE
 
 export function buildDesktopProductPatch(): string {
   const enterprise = hasEnterprisePlugin() ? DESKTOP_ENTERPRISE_ROW : ''
-  return `${DESKTOP_PRODUCT_PATCH_BASE}${enterprise}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_VINABOT_ROW}`
+  return `${DESKTOP_PRODUCT_PATCH_BASE}${enterprise}${DESKTOP_WORKBENCH_ROW}${DESKTOP_MARKET_ROW}${DESKTOP_OFFICE_ROW}${DESKTOP_PPT_ROW}${DESKTOP_VINABOT_ROW}`
 }
 
 export const DESKTOP_PRODUCT_PATCH = buildDesktopProductPatch()

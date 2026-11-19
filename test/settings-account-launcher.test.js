@@ -49,11 +49,19 @@ describe('Desktop account UI composition', () => {
         config: {
           resources: { __jsExpr: 'process.env.DSH_DESKTOP_OFFICE_RESOURCES' },
           cli: { __jsExpr: 'process.env.DSH_DESKTOP_OFFICE_CLI' },
-          modesRoot: { __jsExpr: "dshHomePath('dsh-ppt')" }
+          modesRoot: { __jsExpr: "dshHomePath('kimi-ppt')" },
+          legacyDocumentRoot: { __jsExpr: "dshHomePath('dsh-ppt')" }
         }
       })
       expect(entries.find((entry) => entry.id === 'hmr')?.disabled).not.toBe(true)
-      expect(entries.find((entry) => entry.id === 'dsh-ppt-composer')).toBeUndefined()
+      expect(entries.find((entry) => entry.id === 'dsh-ppt-composer')).toMatchObject({
+        name: 'dsh-ppt-composer',
+        config: {
+          root: { __jsExpr: "dshHomePath('kimi-ppt')" },
+          legacyDocumentRoot: { __jsExpr: "dshHomePath('dsh-ppt')" },
+          provideOfficeModes: false
+        }
+      })
       expect(entries.find((entry) => entry.id === 'dsh-desktop-vinabot')?.name).toBe('dsh-desktop-vinabot')
       const safePatch = await writeDesktopProductPatch(home, 'safe')
       const safeEntries = composeEntries([base, web, loadOverlayPatches('test', safePatch)])

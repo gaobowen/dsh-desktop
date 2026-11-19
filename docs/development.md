@@ -15,7 +15,18 @@ host dependency closure in normal `desktop` profiles only; Safe Mode remains
 isolated. `profiles/web` is copied by the new shell without deleting the old
 profile. Temporary-chat directory creation moves to the new trusted main-frame
 IPC bridge; the upstream Workspace service still owns Sessions and Composer.
-PPT stays unmounted; Office alone provides its existing Word/Excel modes facade.
+The normal Desktop profile mounts the built-in PPT Composer. Word, Excel and
+PPT share lightweight session state. The PPT entry registers its existing
+routes, skills, tools and client contribution at boot. Conversion and
+rendering dependencies load when a PPT operation needs them.
+
+The product patch uses the normal profile’s package resolution for both Office
+entries. Mode state is read from `$DSH_HOME/kimi-ppt`. A Word or Excel selection
+in `$DSH_HOME/dsh-ppt` takes precedence over an older PPT selection until that
+session next writes mode state. Existing decks and templates stay in place.
+Safe Mode omits both entries and remains available for startup recovery.
+Deferred imports report their original errors through the PPT operation.
+
 Obsolete runtime/dragging patches are replaced by the new shell's existing IPC
 shutdown and native caption contracts, with behavior regressions retained. The
 Host also bounds disposal after an unexpected IPC disconnect: a killed parent

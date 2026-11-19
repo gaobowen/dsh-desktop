@@ -8,11 +8,11 @@
       "upstream": ["apps/desktop/src/main.ts"],
       "divergences": [
         "数据目录是 userData/harness，不用 ~/.dsh",
-        "fork 保留 VinaRouter 登录、模型协议和 High 默认值；普通 profile 挂载自有插件，PPT 不挂载，Office 独立提供 Word/Excel 模式",
+        "fork 保留 VinaRouter 登录、模型协议和 High 默认值；普通 profile 挂载自有插件，Word/Excel 使用轻量会话状态入口，PPT Composer 按操作加载转换与渲染依赖",
         "临时会话通过可信主 frame 的专用 IPC 创建独立目录，仍由 Harness 创建 Session 和标准 Composer",
         "不接入官方强制更新、欢迎窗、托盘和官方更新；启动页用现有鲸鱼页 splash.html",
         "最小壳只接启动、协议、窗口安全和后端生命周期",
-        "启动前复制 profiles/web，关闭产品分析、官方账号界面和官方品牌，侧边栏品牌改挂 dsh-desktop-client-ui，普通 profile 再挂 dsh-desktop-workbenches、dsh-desktop-market-installer、dsh-desktop-office 和 dsh-desktop-vinabot；Safe Mode 不挂工作台、市场、Office、VinaRouter 和 PPT，且不把账号会话接到用量页或充值页",
+        "启动前复制 profiles/web，关闭产品分析、官方账号界面和官方品牌，侧边栏品牌改挂 dsh-desktop-client-ui，普通 profile 再挂 dsh-desktop-workbenches、dsh-desktop-market-installer、dsh-desktop-office、dsh-ppt-composer 和 dsh-desktop-vinabot；Safe Mode 不挂工作台、市场、Office、VinaRouter 和 PPT，且不把账号会话接到用量页或充值页",
         "页面脚本之前把当前 profile 的 desktop-storage.json 交给 localStorage，官方界面打开已记住的会话，不在已有工作区新建空会话",
         "复制 profile 前询问是否导入网页版家目录；已有桌面数据、Safe Mode 或关闭窗口都不导入，网页版目录只读",
         "macOS 应用菜单依次是关于 DSH Desktop、检查产品更新、企业版；普通启动下一项以 --safe-mode 重启。Safe Mode 用现有 safe-mode.html 管理 desktop profile 的第三方插件。手机配对走侧边栏，不放进这个菜单。修复代理走侧边栏和 Safe Mode 页，不放进应用菜单，也不使用官方强制更新",

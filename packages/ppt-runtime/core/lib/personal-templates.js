@@ -1,13 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import sharp from 'sharp';
-import { runPersonalTemplateImport } from './personal-template-import.js';
-import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
-import { renderOfficeTemplatePreview } from './office-template-preview.js';
 import { prepareOfficeFontAccess } from './office-font-access.js';
 import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPersonalTemplateProfile, PERSONAL_TEMPLATE_PROFILE_VERSION } from './personal-template-profile.js';
-import { createPersonalTemplateSamples, validPersonalTemplateSamples } from './personal-template-samples.js';
+import { validPersonalTemplateSamples } from './personal-template-sample-index.js';
 import { PersonalTemplateUploads, personalTemplateFileName, decodeTemplateBase64 } from './personal-template-upload.js';
 
 export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 10;
@@ -200,6 +196,7 @@ export class PersonalTemplateLibrary {
       try {
         await this.ensureFontAccess();
         progress.controller.signal.throwIfAborted();
+        const { runPersonalTemplateImport } = await import('./personal-template-import.js');
         const result=await runPersonalTemplateImport({root:this.store.root,sessionId,uploadId,draftId,maxSlides:this.maxSlides}, update=>{
           progress.total=update.total;
           if(update.page)progress.pages.push(update.page);
@@ -226,6 +223,7 @@ export class PersonalTemplateLibrary {
         if (saved?.conversionVersion === PERSONAL_TEMPLATE_CONVERSION_VERSION && saved?.previewVersion === PERSONAL_TEMPLATE_PREVIEW_VERSION) {
           if(saved.templateProfile?.version===PERSONAL_TEMPLATE_PROFILE_VERSION)return {duplicate:true,template:saved};
           // Enrich a current cached conversion without repeating Office rendering.
+          const { loadPptdProject } = await import('./pptd.js');
           const project=await loadPptdProject(await this.projectSource(id));
           const template={...saved,...profileMetadata(extractPersonalTemplateProfile(project))};
           const directory=path.join(this.root,'saved',id),temporary=path.join(directory,`profile-${randomUUID()}.json`);
@@ -252,6 +250,8 @@ export class PersonalTemplateLibrary {
           message: `${item.feature}：${item.message}`
         })) }, fileName, hash(bytes));
         progress?.({total:converted.slideCount});
+        const { checkPptdProject, parsePptdProject } = await import('./pptd.js');
+        const { createPersonalTemplateSamples } = await import('./personal-template-samples.js');
         const original = parsePptdProject(converted.source);
         const checked = checkPptdProject(original);
         if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
@@ -269,6 +269,9 @@ export class PersonalTemplateLibrary {
           await writeFile(path.join(directory, 'source.pptx'), bytes, { mode: 0o600 });
           const previewDirectory = path.join(directory, 'preview');
           signal?.throwIfAborted();
+          const [{ renderOfficeTemplatePreview }, { default: sharp }] = await Promise.all([
+            import('./office-template-preview.js'), import('sharp')
+          ]);
           const previewMetadata = await renderOfficeTemplatePreview(parsed,directory,PREVIEW_LONG_EDGE,this.maxSlides,progress ? async ({page,path:imagePath}) => {
             const thumbnail=await sharp(imagePath).resize({width:240,height:240,fit:'inside',withoutEnlargement:true}).png().toBuffer();
             progress({total:converted.slideCount,page:{page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`}});
@@ -355,6 +358,7 @@ export class PersonalTemplateLibrary {
       const duplicate = templates.find(item => item.id === record.id);
       if (duplicate?.conversionVersion === record.conversionVersion && duplicate?.previewVersion === record.previewVersion) { await rm(directory, { recursive: true }); return duplicate; }
       if (!duplicate && templates.length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
+      const { checkPptdProject, loadPptdProject } = await import('./pptd.js');
       const project = await loadPptdProject(path.join(directory, 'project'));
       if (checkPptdProject(project).status === 'fail') throw new Error('请重新上传完整的模板文件');
       const next = { ...record, ...(duplicate ? {createdAt:duplicate.createdAt,description:duplicate.description} : {}), name, previewTitle: name };
@@ -416,6 +420,7 @@ export class PersonalTemplateLibrary {
     };
     if ((await lstat(directory)).isSymbolicLink()) throw new Error('模板工程目录无效');
     await inspect(directory);
+    const { loadPptdProject } = await import('./pptd.js');
     await loadPptdProject(directory);
     return directory;
   }

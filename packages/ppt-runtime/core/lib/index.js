@@ -1,4 +1,4 @@
-import { parseImageContract } from "./template-image-contract.js";
+import { createOfficeModes as createDocumentModes, messageOf, officeModeState, OfficeSessionStore, PptError } from "./office-modes.js";
 import { workspaceDirectory } from './workspace-directory.js';
 import { validationSchema, validationReport, formatValidation } from "./validation.js";
 import { MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PersonalTemplateLibrary } from "./personal-templates.js";
@@ -12,10 +12,10 @@ import { personalTemplateSourceTheme, personalTemplateDesignProfile, personalTem
 import { registerPreviewAssets } from "./preview-assets.js";
 import { previewFiles } from "./preview-manifest.js";
 import { definitions as DSH_PPT_TEMPLATE_DEFINITIONS, semantics as DSH_PPT_TEMPLATE_SEMANTICS } from "./catalog.js";
-import { i as renderPptdProject, n as loadPptdProject, o as recommendedTextCapacity, r as parsePptdProject, t as checkPptdProject } from "./pptd-2VqVzr_T.js";
+import { recommendedTextCapacity } from "./text-capacity.js";
 import z from "@deepseek-ai/schemastery";
 import { fileURLToPath } from "node:url";
-import { access, appendFile, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { access, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BUNDLED_SKILL_RANK, renderSkillContent } from "@deepseek-ai/dsh-skill";
 import { createHash, randomUUID } from "node:crypto";
@@ -23,7 +23,6 @@ import { publishDirectory } from "./directory-publication.js";
 import yaml from "js-yaml";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { convertPptxToPptd, yamlText, record } from "./pptx-converter.js";
 //#region lib/types/dsh-ppt-skill.js
 /** First-party DSH PPT workflow Skill bundled with the local PPTD route. */
 const PROVIDER = "dsh-ppt-bundled";
@@ -618,14 +617,6 @@ function OfficeTemplateId(value) {
 	return value;
 }
 /**
-* Brand a validated activity id.
-* @param value - Validated identifier text.
-* @returns Activity identity.
-*/
-function OfficeActivityId(value) {
-	return value;
-}
-/**
 * Resolve workflow availability while preserving compatibility with older extracted templates.
 * @param template - Persisted or built-in template definition.
 * @param mode - Presentation workflow requesting the template.
@@ -637,25 +628,6 @@ function templateSupportsMode(template, mode) {
 //#endregion
 //#region lib/types/ppt-service.js
 /** Application service for the independent DSH PPTD route. */
-/** Error with a stable RPC-facing business category. */
-var PptError = class extends Error {
-	code;
-	constructor(code, message) {
-		super(message);
-		this.code = code;
-		this.name = "PptError";
-	}
-};
-function messageOf(error) {
-	return error instanceof Error ? error.message : String(error);
-}
-function normalizeError(error) {
-	if (error instanceof PptError) return error;
-	const message = messageOf(error);
-	if (/limit|too many|too large|beyond/i.test(message)) return new PptError("limit-exceeded", message);
-	if (/invalid|must|contains no|canonical|schema/i.test(message)) return new PptError("invalid-request", message);
-	return new PptError("operation-failed", message);
-}
 function workflowFor(template, slides) {
 	const materialRefs = [...new Set([...slides.flatMap((slide) => slide.sourceRefs), ...template.source === void 0 ? [] : [template.source.fileName]])];
 	return materialRefs.length === 0 ? {
@@ -731,7 +703,6 @@ function pptdQaCode(code) {
 var PptService = class {
 	store;
 	limits;
-	locks = /* @__PURE__ */ new Map();
 	constructor(store, limits) {
 		this.store = store;
 		this.limits = limits;
@@ -793,29 +764,6 @@ var PptService = class {
 			};
 		});
 	}
-	selectDocumentMode(sessionId, mode, actor) {
-        if (![null, 'word', 'excel'].includes(mode)) throw new PptError('invalid-request', 'Choose Word, Excel or ordinary conversation');
-        return this.mutate(sessionId, 'select-document-mode', actor, state => {
-            const { presentationMode, selectedTemplateId, templateMigration, documentMode, selectedDocumentTemplate, ...rest } = state;
-            return { state: mode === null ? rest : { ...rest, documentMode: mode }, value: true,
-                summary: mode === null ? '已进入普通对话' : `已进入 ${mode} 模式`, facts: { mode } };
-        });
-    }
-    selectDocumentTemplate(sessionId, template, actor) {
-        if (!template || !['word', 'excel'].includes(template.mode) || typeof template.id !== 'string' || !/^[a-z0-9-]{1,96}$/.test(template.id)
-            || typeof template.revision !== 'string' || !/^[a-zA-Z0-9.-]{1,96}$/.test(template.revision)) throw new PptError('invalid-request', 'Choose a versioned Office template');
-        return this.mutate(sessionId, 'select-document-template', actor, state => {
-            if (state.documentMode !== template.mode) throw new PptError('conflict', 'Choose the matching document format');
-            return { state: { ...state, selectedDocumentTemplate: { id: template.id, mode: template.mode, revision: template.revision } }, value: true,
-                summary: `已选择 Office 案例 ${template.id}`, facts: { ...template } };
-        });
-    }
-    deselectDocumentTemplate(sessionId, actor) {
-        return this.mutate(sessionId, 'deselect-document-template', actor, state => {
-            const { selectedDocumentTemplate, ...rest } = state;
-            return { state: rest, value: true, summary: '已移除 Office 案例参考', facts: {} };
-        });
-    }
 	deselectTemplate(sessionId, actor) {
 		return this.mutate(sessionId, "deselect-template", actor, (state) => {
 			const { selectedTemplateId: _selectedTemplateId, templateMigration: _migration, ...next } = state;
@@ -842,6 +790,7 @@ var PptService = class {
 					...pptdDraftSlide(project, page, index)
 				}))
 			});
+			const { renderPptdProject } = await import("./pptd.js");
 			const rendered = await renderPptdProject(project);
 			signal.throwIfAborted();
 			const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -920,61 +869,8 @@ var PptService = class {
 			};
 		});
 	}
-	async mutate(sessionId, operation, actor, work) {
-		return this.withLock(sessionId, async () => {
-			const started = Date.now();
-			const startedAt = new Date(started).toISOString();
-			const state = await this.store.readState(sessionId);
-			try {
-				const result = await work(state);
-				const activity = this.activity(operation, actor, started, startedAt, "completed", result.summary);
-				await this.store.writeState({
-					...result.state,
-					activities: [activity, ...result.state.activities]
-				});
-				await this.store.appendAudit(sessionId, activity, result.facts ?? {});
-				return result.value;
-			} catch (error) {
-				const normalized = normalizeError(error);
-				const activity = this.activity(operation, actor, started, startedAt, "failed", "操作失败", normalized.message);
-				await this.store.writeState({
-					...state,
-					activities: [activity, ...state.activities]
-				}).catch(() => void 0);
-				await this.store.appendAudit(sessionId, activity, {}).catch(() => void 0);
-				throw normalized;
-			}
-		});
-	}
-	activity(operation, actor, started, startedAt, status, summary, error) {
-		const completed = Date.now();
-		return {
-			id: OfficeActivityId(randomUUID()),
-			operation,
-			actor: actor.kind,
-			status,
-			startedAt,
-			completedAt: new Date(completed).toISOString(),
-			durationMs: completed - started,
-			summary,
-			...error === void 0 ? {} : { error: error.slice(0, 2e3) }
-		};
-	}
-	async withLock(sessionId, work) {
-		const previous = this.locks.get(sessionId) ?? Promise.resolve();
-		let release;
-		const gate = new Promise((resolve) => {
-			release = resolve;
-		});
-		const current = previous.catch(() => void 0).then(() => gate);
-		this.locks.set(sessionId, current);
-		await previous.catch(() => void 0);
-		try {
-			return await work();
-		} finally {
-			release();
-			if (this.locks.get(sessionId) === current) this.locks.delete(sessionId);
-		}
+	mutate(sessionId, operation, actor, work) {
+		return this.store.mutate(sessionId, operation, actor.kind, work);
 	}
 };
 //#endregion
@@ -1317,9 +1213,6 @@ const BUILT_IN_TEMPLATES = DSH_PPT_TEMPLATE_DEFINITIONS.map(pptTemplate);
 if (new Set(BUILT_IN_TEMPLATES.map(template => template.id)).size !== BUILT_IN_TEMPLATES.length) throw new Error("内置模板标识重复");
 //#region lib/types/ppt-store.js
 /** Session-confined persistence for the DSH PPTD route. */
-function sessionKey(sessionId) {
-	return createHash("sha256").update(sessionId).digest("hex").slice(0, 32);
-}
 function safeName(value) {
 	return (value.normalize("NFKC").replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "presentation").slice(0, 96);
 }
@@ -1339,31 +1232,18 @@ function persistedState(value, sessionId, personalTemplates = []) {
   // Preserve historical decks and generated files; they are user-owned records.
   decks: Array.isArray(record.decks) ? record.decks : [],
   activities: Array.isArray(record.activities) ? record.activities : [],
-  ...(['word', 'excel'].includes(record.documentMode) ? { documentMode: record.documentMode } :
-      record.presentationMode === "ppt" ? { presentationMode: "ppt" } : {}),
-  ...(['word', 'excel'].includes(record.documentMode) && record.selectedDocumentTemplate?.mode === record.documentMode
-      && /^[a-z0-9-]{1,96}$/.test(record.selectedDocumentTemplate?.id ?? '') && /^[a-zA-Z0-9.-]{1,96}$/.test(record.selectedDocumentTemplate?.revision ?? '')
-      ? { selectedDocumentTemplate: { id: record.selectedDocumentTemplate.id, mode: record.documentMode, revision: record.selectedDocumentTemplate.revision } } : {}),
+  ...officeModeState(record),
   ...(selectedTemplateId === undefined ? {} : { selectedTemplateId }),
   ...(missingPersonal ? { templateMigration: { reason: "personal-template-deleted" } } : retired ? { templateMigration: { reason: "template-retired", replacementId: fallback.id } } :
      record.templateMigration?.reason === "template-retired" ? { templateMigration: record.templateMigration } : {})
  };
 }
 /** Local store containing only PPT route state, source projects, and output files. */
-var PptStore = class {
+var PptStore = class extends OfficeSessionStore {
 	limits;
-	root;
-	auditTail = Promise.resolve();
-	constructor(root, limits) {
+	constructor(root, limits, legacyDocumentRoot) {
+		super(root, { maxActivities: limits.maxActivities, legacyDocumentRoot });
 		this.limits = limits;
-		if (!path.isAbsolute(root)) throw new Error("DSH PPT root must be an absolute path");
-		this.root = path.resolve(root);
-	}
-	sessionDirectory(sessionId) {
-		return path.join(this.root, "sessions", sessionKey(sessionId));
-	}
-	statePath(sessionId) {
-		return path.join(this.sessionDirectory(sessionId), "state.json");
 	}
 	async catalog() {
 		const personalTemplates = await this.personalTemplates?.list() ?? [];
@@ -1371,47 +1251,14 @@ var PptStore = class {
 	}
 	async readState(sessionId) {
 		const personalTemplates = await this.personalTemplates?.list() ?? [];
-		try {
-			return persistedState(JSON.parse(await readFile(this.statePath(sessionId), "utf8")), sessionId, personalTemplates);
-		} catch (error) {
-			if (error.code !== "ENOENT") throw error;
-			return {
-				sessionId,
-				templates: [...BUILT_IN_TEMPLATES, ...personalTemplates],
-				decks: [],
-				activities: []
-			};
-		}
+		return persistedState(await this.readRawState(sessionId), sessionId, personalTemplates);
 	}
 	assertDeckCapacity(state) {
 		if (state.decks.length >= this.limits.maxDecksPerSession) throw new Error("session deck limit exceeded");
 	}
 	async writeState(state) {
 		if (state.decks.length > this.limits.maxDecksPerSession) throw new Error("session deck limit exceeded");
-		const bounded = {
-			...state,
-			templates: BUILT_IN_TEMPLATES,
-			activities: state.activities.slice(0, this.limits.maxActivities)
-		};
-		await mkdir(this.sessionDirectory(state.sessionId), {
-			recursive: true,
-			mode: 448
-		});
-		const target = this.statePath(state.sessionId);
-		const temporary = `${target}.${randomUUID()}.tmp`;
-		const handle = await open(temporary, "wx", 384);
-		try {
-			await handle.writeFile(`${JSON.stringify(bounded, null, 2)}\n`);
-			await handle.sync();
-		} finally {
-			await handle.close();
-		}
-		try {
-			await rename(temporary, target);
-		} catch (error) {
-			await unlink(temporary).catch(() => void 0);
-			throw error;
-		}
+		await super.writeState({ ...state, templates: BUILT_IN_TEMPLATES });
 	}
 	async writeOutput(sessionId, deck, bytes, workspaceRoot, project, requestedFileName) {
 		const directory = path.join(this.sessionDirectory(sessionId), "outputs");
@@ -1440,25 +1287,6 @@ var PptStore = class {
 			await unlink(target).catch(() => void 0);
 			throw error;
 		}
-	}
-	async appendAudit(sessionId, activity, facts) {
-		const line = JSON.stringify({
-			sessionKey: sessionKey(sessionId),
-			...activity,
-			...facts
-		});
-		const write = this.auditTail.catch(() => void 0).then(async () => {
-			await mkdir(this.root, {
-				recursive: true,
-				mode: 448
-			});
-			await appendFile(path.join(this.root, "audit.ndjson"), `${line}\n`, {
-				encoding: "utf8",
-				mode: 384
-			});
-		});
-		this.auditTail = write;
-		await write;
 	}
 	async publishWorkspaceOutput(workspaceRoot, deck, bytes, project, requestedFileName) {
 		if (!path.isAbsolute(workspaceRoot)) throw new Error("DSH PPT workspace root must be absolute");
@@ -1792,6 +1620,7 @@ function safePptxName(value, kind) {
 	return safe;
 }
 async function projectValidationReport(project, input, workspace) {
+	const { checkPptdProject } = await import("./pptd.js");
 	const directory = (await stat(input)).isDirectory() ? input : path.dirname(input);
 	return validationReport(checkPptdProject(project), {
 		projectPath: relativeToWorkspace(await realpath(workspace), directory), projectDirectory: directory
@@ -1828,7 +1657,8 @@ function registerPptdProjectTools(ctx, service) {
 					const entry = path.join(stage, "deck.pptd");
 					const manifest = yaml.load(await readFile(entry, "utf8"), { schema: yaml.JSON_SCHEMA });
 					manifest.template = { id: template.id, name: template.name };
-					const source={manifest:yamlText(manifest)};
+					const { checkPptdProject, loadPptdProject } = await import("./pptd.js");
+					const source = { manifest: yaml.dump(manifest, { schema: yaml.JSON_SCHEMA, noRefs: true, lineWidth: -1, sortKeys: false }) };
 					await writeFile(entry,template.templateProfile ? personalTemplateSourceTheme(source,template.templateProfile).manifest : source.manifest,{mode:384});
 					if (checkPptdProject(await loadPptdProject(stage)).status === "fail") throw new Error("模板副本需要修复后才能发布");
 					exec.signal.throwIfAborted();
@@ -1849,6 +1679,7 @@ function registerPptdProjectTools(ctx, service) {
 			const workspace = await workspaceDirectory(ctx, exec, false);
 			const input = await existingWorkspacePath(workspace, args.project_path, "project_path");
 			exec.signal.throwIfAborted();
+			const { loadPptdProject } = await import("./pptd.js");
 			return projectValidationReport(await loadPptdProject(input), input, workspace);
 		},
 		isConcurrencySafe: () => true,
@@ -2290,11 +2121,13 @@ function registerPptdProjectTools(ctx, service) {
 			const source = await existingWorkspacePath(workspace, safePptxName(args.pptx_path, "pptx_path"), "pptx_path");
 			const metadata = await lstat(source);
 			if (!metadata.isFile() || metadata.size > MAX_PPTX_BYTES) throw new Error(`pptx_path must be a file no larger than ${MAX_PPTX_BYTES} bytes`);
+			const { convertPptxToPptd } = await import("./pptx-converter.js");
 			const converted = await convertPptxToPptd(await readFile(source), path.basename(source));
 			const normalizedCount = converted.diagnostics.filter((item) => item.level === "normalized").length;
 			const unsupportedCount = converted.diagnostics.filter((item) => item.level === "unsupported").length;
             const placeholderCount = converted.diagnostics.filter(item => item.level === 'placeholder').length;
 			if (args.strict === true && converted.diagnostics.length > 0) throw new Error(`strict PPTD import requires lossless coverage; received ${normalizedCount} normalized, ${placeholderCount} placeholder and ${unsupportedCount} unsupported diagnostic(s)`);
+			const { checkPptdProject, parsePptdProject } = await import("./pptd.js");
 			const initialCheck = checkPptdProject(parsePptdProject(converted.source));
 			if (initialCheck.status === "fail") throw new Error(`PPTX conversion produced a PPTD project that cannot be rendered; received ${initialCheck.errorCount} format error(s)`);
 			const output = await outputWorkspacePath(workspace, args.output_directory ?? defaultProjectPath(safePptxName(args.pptx_path, "pptx_path")), "output_directory");
@@ -2392,6 +2225,7 @@ function registerPptdProjectTools(ctx, service) {
 			const workspace = await workspaceDirectory(ctx, exec);
 			const input = await existingWorkspacePath(workspace, args.project_path, "project_path");
 			const outputRelative = safePptxName(args.output_file, "output_file");
+			const { loadPptdProject } = await import("./pptd.js");
 			const project = await loadPptdProject(input);
 			exec.signal.throwIfAborted();
 			const check = await projectValidationReport(project, input, workspace);
@@ -2704,9 +2538,10 @@ function registerPptTools(ctx, service) {
 	// Keep user invocation available for an explicit request to change workflows.
 	ctx.on("skills/invocation", async (policy, skill, options, next) => {
 		const inherited = await next();
-		const scope = record(options.scope);
-		const sessionId = options.sessionId ?? scope?.id;
-		if (skill.name !== "office-pptx" || typeof sessionId !== "string") return inherited;
+		if (skill.name !== "office-pptx") return inherited;
+		const scope = options.scope;
+		const sessionId = options.sessionId ?? (typeof scope === "object" && scope !== null && !Array.isArray(scope) ? scope.id : undefined);
+		if (typeof sessionId !== "string") return inherited;
 		const active = (await service.state(sessionId)).presentationMode === "ppt";
 		return active ? { ...inherited, modelInvocable: false } : inherited;
 	});
@@ -3067,6 +2902,8 @@ function registerPptTools(ctx, service) {
 			if (template === void 0 || !templateSupportsMode(template, "ppt")) throw new Error(`template ${args.template_id} is not available to the DSH PPT workflow`);
 			if (template.origin === "personal") {
 				const source = await service.store.personalTemplates.projectSource(template.id);
+				const { loadPptdProject } = await import("./pptd.js");
+				const { parseImageContract } = await import("./template-image-contract.js");
 				const allowedFiles = new Set((await loadPptdProject(source)).pages.map(page => page.file));
 				const numbers = args.slide_numbers;
 				if (numbers !== void 0 && (numbers.length > 12 || numbers.some(n => !Number.isInteger(n) || n < 1 || n > template.slideCount))) throw new Error("每次读取 1–12 个有效模板页码");
@@ -3138,6 +2975,8 @@ const inject = [
 /** Loader schema with conservative local defaults. */
 const Config = z.object({
 	root: z.string().required(),
+	legacyDocumentRoot: z.string(),
+	provideOfficeModes: z.boolean().default(true),
 	maxSlides: z.natural().min(1).default(40),
 	maxDecksPerSession: z.natural().min(1).default(50),
 	maxActivities: z.natural().min(1).default(200),
@@ -3210,34 +3049,33 @@ function registerPptRpcRoute(webCtx, channel, rpcHandler) {
 	}), `dsh-ppt: ${channel} rpc route`);
 }
 
-/** Share the existing state and audit implementation without activating PPT tools or routes. */
-function officeModesForService(service) {
-    return {
-        state: sessionId => service.state(sessionId),
-        select: (sessionId, mode) => service.selectDocumentMode(sessionId, mode, { kind: 'user' }),
-        selectTemplate: (sessionId, template) => service.selectDocumentTemplate(sessionId, template, { kind: 'user' }),
-        deselectTemplate: sessionId => service.deselectDocumentTemplate(sessionId, { kind: 'user' }),
-        record: (sessionId, operation, facts) => service.mutate(sessionId, operation, { kind: 'agent' }, state => ({ state, value: true, summary: operation, facts }))
-    };
+function officeModesForPptStore(store) {
+	const modes = createDocumentModes(store.root, {
+		legacyDocumentRoot: store.legacyDocumentRoot,
+		maxActivities: store.maxActivities
+	});
+	return { ...modes, state: sessionId => store.readState(sessionId) };
 }
-/** An Office-only deployment owns the same store but never applies the PPT plugin. */
+
+// Preserve the full PPT state returned by this entry for standalone consumers.
 function createOfficeModes(root) {
-    return officeModesForService(new PptService(new PptStore(root, {
-        maxDecksPerSession: 50,
-        maxActivities: 200
-    }), { maxSlides: 40 }));
+	return officeModesForPptStore(new PptStore(root, { maxDecksPerSession: 50, maxActivities: 200 }));
 }
 
 async function apply(ctx, config) {
 	const bundledPptSkillRoot = fileURLToPath(new URL("../skills/dsh-ppt", import.meta.url));
 	registerPreviewAssets(ctx, previewFiles, path.join(bundledPptSkillRoot, "references"));
 	registerPptSkill(ctx, config.pptSkillRoot ?? config.kimiPptSkillRoot ?? process.env.DSH_PPT_SKILL_ROOT ?? process.env.DSH_KIMI_PPT_SKILL_ROOT ?? bundledPptSkillRoot);
+	const maxActivities = config.maxActivities ?? 200;
 	const service = new PptService(new PptStore(config.root, {
 		maxDecksPerSession: config.maxDecksPerSession ?? 50,
-		maxActivities: config.maxActivities ?? 200
-	}), { maxSlides: config.maxSlides ?? 40 });
-    ctx.provide('officeModes', officeModesForService(service));
-	service.store.personalTemplates = new PersonalTemplateLibrary(service.store, convertPptxToPptd, writePptdProjectSource);
+		maxActivities
+	}, config.legacyDocumentRoot), { maxSlides: config.maxSlides ?? 40 });
+	if (config.provideOfficeModes !== false) ctx.provide("officeModes", officeModesForPptStore(service.store));
+	service.store.personalTemplates = new PersonalTemplateLibrary(service.store, async (bytes, name, options) => {
+		const { convertPptxToPptd } = await import("./pptx-converter.js");
+		return convertPptxToPptd(bytes, name, options);
+	}, writePptdProjectSource);
 	const rpcHandler = pptRpc(service);
 	ctx.inject(["webServer"], (webCtx) => {
 		registerPptRpcRoute(webCtx, "/dsh-ppt", rpcHandler);

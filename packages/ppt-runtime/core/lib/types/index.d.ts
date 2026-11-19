@@ -1,5 +1,6 @@
 /** Host entry for the installable DSH PPT bundle. */
 import type { Context } from '@deepseek-ai/cordis';
+import type { OfficeModes } from './office-modes.js';
 import z from '@deepseek-ai/schemastery';
 /** Cordis plugin identity. */
 export declare const name = "dsh-ppt";
@@ -9,6 +10,8 @@ export declare const inject: string[];
 export interface Config {
     /** Absolute local root for state, revisions, and audit. */
     root: string;
+    legacyDocumentRoot?: string;
+    provideOfficeModes?: boolean;
     /** Maximum slides accepted in one generated presentation. */
     maxSlides?: number;
     /** Maximum persisted presentations in one DSH session. */
@@ -22,12 +25,8 @@ export interface Config {
 export declare const Config: z<Config>;
 /** Compose storage, browser RPC, and bounded model tools. */
 export declare function apply(ctx: Context, config: Config): Promise<void>;
-/** State-only Office facade; does not activate the PPT plugin, UI, tools or routes. */
-export declare function createOfficeModes(root: string): {
+/** Compatibility facade with the full PPT conversation state. */
+export declare function createOfficeModes(root: string): Omit<OfficeModes, 'state'> & {
     state(sessionId: string): ReturnType<import('./ppt-service.ts').PptService['state']>;
-    select(sessionId: string, mode: 'word' | 'excel' | null): Promise<boolean>;
-    selectTemplate(sessionId: string, template: { id: string; mode: 'word' | 'excel'; revision: string }): Promise<boolean>;
-    deselectTemplate(sessionId: string): Promise<boolean>;
-    record(sessionId: string, operation: string, facts: Record<string, unknown>): Promise<boolean>;
 };
 export type { PptService } from './ppt-service.ts';

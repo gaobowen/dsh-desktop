@@ -87,13 +87,17 @@ describe('DSH PPT built-in plugin', () => {
     expect(adapter).not.toMatch(excluded)
   })
 
-  it('ships every JavaScript chunk imported by the Host entry', async () => {
+  it('ships the Host entry and the JavaScript loaded on demand by PPT', async () => {
     const entries = await artifact('core')
-    const host = entries.get('package/lib/index.js')?.toString('utf8') ?? ''
-    const chunk = /from "\.\/(pptd-[A-Za-z0-9_-]+\.js)"/u.exec(host)?.[1]
-
-    expect(chunk).toBeDefined()
-    expect(entries.has(`package/lib/${chunk}`)).toBe(true)
+    for (const file of ['index.js', 'pptd.js', 'personal-templates.js']) {
+      const source = entries.get('package/lib/' + file)?.toString('utf8')
+      expect(source, file).toBeDefined()
+      const imports = [...(source ?? '').matchAll(/(?:from\s+|import\(\s*)["']\.\/([^"']+\.js)["']/gu)]
+      expect(imports.length, file).toBeGreaterThan(0)
+      for (const [, dependency] of imports) {
+        expect(entries.has('package/lib/' + dependency), file + ' imports ' + dependency).toBe(true)
+      }
+    }
   })
 
   it('exposes geometry-derived text capacity to the PPT authoring workflow', async () => {
