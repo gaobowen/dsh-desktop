@@ -62,6 +62,8 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
     })
     cleanExit = result.code === 0 && result.output.includes('FORK-UI-ACCEPTANCE-COMPLETE')
     expect(result.code, result.output.replace(/token=[^\s]+/gu, 'token=[redacted]')).toBe(0)
+    expect(result.output).toContain('[desktop] Harness is ready')
+    expect(result.output).not.toContain("Error occurred in handler for 'desktop-titlebar:set-theme'")
     expect(result.output).toContain('FORK-UI-ACCEPTANCE-COMPLETE')
     const evidence = JSON.parse(await readFile(join(temporary, 'evidence.json'), 'utf8')) as unknown
     expect(evidence).toMatchObject({ configured: true, standardComposer: true, draft: true, high: true, temporaryGroup: true })

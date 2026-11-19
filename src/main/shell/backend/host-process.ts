@@ -90,6 +90,8 @@ export interface DesktopHostProcessOptions {
   inspectPort?: number
   environment?: NodeJS.ProcessEnv
   primaryRuntime?: string
+  startupTimeoutMs?: number
+  onStartupNotice?: (message: string) => void
   packageManager?: { readonly pnpm: string, readonly nodeBin: string }
   onFailure?: (error: Error) => void
   onPlatformSession?: (session: PlatformSession | null) => void
@@ -156,6 +158,32 @@ export class DesktopHostProcess {
         resolve()
       })
     })
+    const started = performance.now()
+    const elapsedSeconds = (): number => Math.round((performance.now() - started) / 1_000)
+    // Only copy the count. Plugin names and surrounding output may contain
+    // paths or configuration. An original Host fatal event still carries its cause.
+    const pendingCount = (): string | undefined =>
+      Array.from(this.stderr.matchAll(/^\[loader\] still waiting for (\d+) plugin entries after \d+s:/gmu)).at(-1)?.[1]
+    const waiting = this.options.onStartupNotice === undefined ? undefined : setInterval(() => {
+      if (this.stopping) return
+      const pending = pendingCount()
+      const detail = pending === undefined ? '' : `, last loader count: ${pending} pending`
+      this.options.onStartupNotice?.(`[desktop] waiting for Harness startup (${elapsedSeconds()}s${detail})`)
+    }, 15_000)
+    const timeout = this.options.startupTimeoutMs === undefined ? undefined : setTimeout(() => {
+      if (this.stopping) return
+      const pending = pendingCount()
+      this.fail(new DesktopHostFatalError(
+        `Desktop Host did not finish startup after ${elapsedSeconds()}s`,
+        pending === undefined ? undefined : `Last loader count: ${pending} pending plugin entries.`
+      ))
+    }, this.options.startupTimeoutMs)
+    // The shell's backend controller owns child shutdown after any failed start.
+    void this.readyPromise.then(clearStartupTimers, clearStartupTimers)
+    function clearStartupTimers(): void {
+      clearInterval(waiting)
+      clearTimeout(timeout)
+    }
     return this.readyPromise
   }
 

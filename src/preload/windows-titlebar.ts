@@ -9,6 +9,7 @@ const MODAL_OPEN_ATTRIBUTE = 'data-dsh-modal-open'
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
+  syncNativeTheme?: boolean
 }
 
 /** Harness reads this marker while creating its first layout frame.
@@ -53,6 +54,7 @@ export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions):
   trackModals(document)
   mountWindowsMenuBar({ document, ipcRenderer })
 
+  if (options.syncNativeTheme === false) return
   syncTheme(document, ipcRenderer)
   const themeObserver = new MutationObserver(() => syncTheme(document, ipcRenderer))
   themeObserver.observe(document.body, {

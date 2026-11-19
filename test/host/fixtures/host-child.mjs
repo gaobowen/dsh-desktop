@@ -20,7 +20,11 @@ if (process.env.FIXTURE_MODE === 'invalid') {
   process.send?.({ type: 'nope' })
   setTimeout(() => { process.exit(0) }, 1000)
 } else {
-  process.send?.({ type: 'ready', url: 'http://127.0.0.1:9/', injections: ['boot'] })
+  if (process.env.FIXTURE_MODE === 'no-ready') {
+    console.error('[loader] still waiting for 2 plugin entries after 5s: private fixture detail')
+  } else {
+    process.send?.({ type: 'ready', url: 'http://127.0.0.1:9/', injections: ['boot'] })
+  }
   process.on('message', message => {
     if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'shutdown') {
       process.send?.({ type: 'shutdown-complete' })

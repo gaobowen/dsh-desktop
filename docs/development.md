@@ -131,6 +131,14 @@ DSH_DEV_PROFILE=dsh-desktop-dev-workbench DSH_DEV_HARNESS_PORT=43132 DSH_DEV_MOB
 
 On PowerShell, set the same names through `$env:DSH_DEV_PROFILE`, `$env:DSH_DEV_HARNESS_PORT` and `$env:DSH_DEV_MOBILE_PORT` before `npm run dev`. The profile must be a directory name, separate from `dsh-desktop`; ports must be distinct integers from 1024 to 65535. These overrides are ignored by production builds. Defaults remain `dsh-desktop-dev`, Harness port 43130 and mobile port 43128.
 
+On Windows, an unpackaged launch gives Harness up to five minutes to initialize
+its plugin tree on a cold start. An explicit `DSH_LOADER_TIMEOUT_MS` value
+overrides that default. The shell reports elapsed time and the latest pending
+plugin count in the terminal, followed by `Harness is ready` after local
+authentication succeeds. A timed-out Host enters the existing startup recovery
+flow. Look for the current `harness/fatal-report.json` under the development
+user data directory for the failed stage and retained diagnostics.
+
 ## Workbench package lifecycle
 
 Workbench Market resolves reviewed catalog targets, but delegates package installation,

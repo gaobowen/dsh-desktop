@@ -26,7 +26,8 @@ if (usesDesktopCaption(process.platform)) {
   // element appears. The caption menu itself waits until the body exists.
   markWindowsTitlebar(document)
   const mountCaption = (): void => {
-    mountWindowsTitlebarLayout({ document, ipcRenderer })
+    // Local pages can load before the app-only theme handler is registered.
+    mountWindowsTitlebarLayout({ document, ipcRenderer, syncNativeTheme: appDocument })
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountCaption, { once: true })
   else mountCaption()

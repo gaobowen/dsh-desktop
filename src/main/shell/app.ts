@@ -25,7 +25,7 @@ import {
   type HarnessLocale
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
-import { developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
+import { desktopHostStartupOptions, developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
 import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
 import { clearNativeLocaleAttempt, confirmNativeLocaleRestart, NativeDirectoryPicker, nativeLocaleRelaunchArguments, shouldCalibrateNativeLocale } from './native-locale'
@@ -889,6 +889,7 @@ async function main(): Promise<void> {
     }
   })
   backend = new DesktopBackendController(onFailure => {
+    const launch = desktopHostStartupOptions(app.isPackaged, process.platform, hostEnvironment)
     const host = new DesktopHostProcess({
       // Market installs re-exec this binary. The macOS Helper stays in Node mode;
       // launching the app's main executable opens a terminal.
@@ -899,12 +900,14 @@ async function main(): Promise<void> {
       dshHome,
       profile: safeMode ? SAFE_MODE_PROFILE : 'desktop',
       environment: {
-        ...hostEnvironment,
+        ...launch.environment,
         DSH_CLIENT_VERSION: app.getVersion(),
         DSH_DESKTOP_PATCH_FILE: productPatch,
         ...(safeMode ? {} : officeEnvironment(primaryRuntime))
       },
       primaryRuntime,
+      startupTimeoutMs: launch.startupTimeoutMs,
+      onStartupNotice: message => { console.info(message) },
       onFailure,
       onPluginOperation: record => { operationJournal.enqueue(JSON.stringify(record)) }
     })
@@ -916,6 +919,7 @@ async function main(): Promise<void> {
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
         const cookie = await authenticateWebHost(ready.url)
         bootSession.publish(generation, { url: ready.url, injections: ready.injections, cookie })
+        console.info('[desktop] Harness is ready')
       },
       stop: () => host.stop()
     }

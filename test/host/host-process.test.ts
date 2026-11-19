@@ -70,6 +70,28 @@ describe('desktop host process', () => {
     await expect(host.start()).rejects.toBeInstanceOf(DesktopHostFatalError)
     await host.stop()
   })
+
+  it('bounds startup when a child stays alive without announcing readiness', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'shell-host-'))
+    temporary.push(directory)
+    const host = new DesktopHostProcess({
+      node: electron,
+      entry: fixture,
+      runtimeDir: directory,
+      projectDir: directory,
+      dshHome: directory,
+      startupTimeoutMs: 2_000,
+      environment: { FIXTURE_MODE: 'no-ready' }
+    })
+    try {
+      await expect(host.start()).rejects.toMatchObject({
+        message: expect.stringContaining('did not finish startup'),
+        diagnostic: 'Last loader count: 2 pending plugin entries.'
+      })
+    } finally {
+      await host.stop()
+    }
+  })
 })
 
 describe('shell boundaries', () => {
