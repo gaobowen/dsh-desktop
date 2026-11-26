@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { isSplashPageUrl } from '../../src/main/shell/splash-page'
 
-describe('whale splash page', () => {
+describe('startup splash page', () => {
   it('recognizes the splash file and rejects the application document', () => {
     const page = join(tmpdir(), 'splash.html')
     const url = new URL(pathToFileURL(page))

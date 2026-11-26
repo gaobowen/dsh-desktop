@@ -27,7 +27,9 @@ it('runs real mobile pairing windows with local tunnel providers and isolated us
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       DSH_HOME: join(root, 'harness'),
-      DSH_MOBILE_FIXTURE_ROOT: root
+      DSH_MOBILE_FIXTURE_ROOT: root,
+      DSH_MOBILE_FIXTURE_MARK: resolve('build/vina-brand-mark.svg'),
+      DSH_MOBILE_FIXTURE_ICON: resolve('.build/brand-assets/mobile-icon.png')
     }
     delete env.ELECTRON_RUN_AS_NODE
     const result = spawnSync(electron, [entry], {
@@ -43,7 +45,7 @@ it('runs real mobile pairing windows with local tunnel providers and isolated us
     expect(result.error, evidence).toBeUndefined()
     expect(result.signal, evidence).toBeNull()
     expect(result.status, evidence).toBe(0)
-    for (const name of ['manual-loading', 'success', 'failure', 'reuse', 'lan-reconnect', 'cleanup']) {
+    for (const name of ['manual-loading', 'success', 'failure', 'reuse', 'lan-reconnect', 'branding', 'cleanup']) {
       expect(result.stdout, evidence).toContain(`PASS ${name}`)
     }
     expect(result.stdout, evidence).toContain('MOBILE-WINDOW-ELECTRON-COMPLETE')

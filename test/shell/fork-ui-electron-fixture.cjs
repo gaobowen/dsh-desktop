@@ -20,7 +20,7 @@ writeFileSync(join(profile, 'cordis.patch.yml'), '[]\n')
 // Only the child Host consumes this preload; the current Electron main is already running.
 process.env.NODE_OPTIONS = `--import=${process.env.DSH_FORK_UI_RELAY}`
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
-const watchdog = setTimeout(() => { console.error('Fork UI watchdog expired'); app.exit(2) }, 100_000)
+const watchdog = setTimeout(() => { console.error('Fork UI watchdog expired'); app.exit(2) }, 230_000)
 
 async function capture(window, name) {
   try {
@@ -32,8 +32,9 @@ async function capture(window, name) {
   }
 }
 
-async function waitFor(read, description) {
-  for (let attempt = 0; attempt < 140; attempt++) {
+async function waitFor(read, description, timeoutMs = 70_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
     const value = await read()
     if (value) return value
     await delay(500)
@@ -42,8 +43,17 @@ async function waitFor(read, description) {
 }
 
 async function accept() {
-  const window = await waitFor(() => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().startsWith('dsh-app://app')), 'authenticated document')
+  const window = await waitFor(() => BrowserWindow.getAllWindows().find(candidate => {
+    const url = candidate.webContents.getURL()
+    return url.startsWith('file:') && new URL(url).pathname.endsWith('/splash.html')
+  }), 'startup splash')
   const js = source => window.webContents.executeJavaScript(source)
+  await waitFor(() => js(`(() => {
+    const mark = document.querySelector('.mark');
+    return mark?.naturalWidth > 0 && new URL(mark.currentSrc).hash === '#startup' &&
+      document.querySelector('h1')?.textContent === 'VinaHarness';
+  })()`), 'VinaHarness startup animation')
+  await waitFor(() => window.webContents.getURL().startsWith('dsh-app://app'), 'authenticated document', 170_000)
   await waitFor(() => js('!!document.querySelector(".dshVinabotForm")'), 'VinaRouter client activation')
   const configured = await js(`(async()=>{
     const post=async(path,body)=>{const r=await fetch('/api/dsh-desktop/vinabot/'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw Error(JSON.stringify(result));return result};
@@ -52,6 +62,18 @@ async function accept() {
   })()`)
   if (!configured.ok) throw Error('VinaRouter configuration failed')
   window.webContents.reload()
+  await waitFor(() => js(`(() => {
+    const mark = '[data-dsh-vina-brand-mark]';
+    const sidebar = document.querySelector('[data-dsh-sidebar-root]');
+    const sidebarMark = sidebar?.querySelector(mark);
+    const heroMark = [...document.querySelectorAll(mark)]
+      .find(node => !node.closest('[data-dsh-sidebar-root]'));
+    if (!sidebarMark?.getBoundingClientRect().width || !heroMark?.getBoundingClientRect().width ||
+        !sidebarMark.naturalWidth || !heroMark.naturalWidth) return false;
+    return sidebar.querySelector('[data-dsh-vina-brand-name]')?.textContent === 'VinaHarness' &&
+      sidebarMark.currentSrc === heroMark.currentSrc &&
+      new URL(heroMark.currentSrc).hash === '#mark';
+  })()`), 'visible VinaHarness sidebar and welcome marks')
   await waitFor(() => js(`(() => {const button=[...document.querySelectorAll('button')].find(b=>/^(新会话|New session|New chat)/i.test(b.textContent.trim()));if(!button || document.querySelector('.dshVinabotForm'))return false;button.click();return true})()`), 'new Session action')
   await waitFor(() => js('!!document.querySelector("[contenteditable=true]")'), 'standard Composer')
   await js('document.querySelector("[contenteditable=true]").focus()')
@@ -64,6 +86,15 @@ async function accept() {
     return true;
   })()`)
   const visible = selector => js(`!!document.querySelector(${JSON.stringify(selector)})?.getClientRects().length`)
+  await waitFor(() => click('[data-dsh-sidebar-settings-content] button'), 'Settings action')
+  const settings = '[data-shortcut-modal="settings"]'
+  await waitFor(() => visible(settings + ' [data-dsh-settings-sidebar-footer]'), 'Settings sidebar footer')
+  if (await js(`!!document.querySelector('[data-shortcut-modal="settings"] a[href*="/enterprise"]')`)) {
+    throw Error('Unexpected enterprise link in Settings')
+  }
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+  await waitFor(async () => !await visible(settings), 'Settings close')
   await waitFor(() => click('[data-office-mode="word"]'), 'Word mode action')
   await waitFor(() => visible('[data-office-dock="word"] .dso-card'), 'Word template gallery')
   await waitFor(() => click('[data-office-mode="excel"]'), 'Excel mode action')
@@ -73,6 +104,21 @@ async function accept() {
   await waitFor(async () => await visible('[data-office-ppt-template-panel]')
     && !await visible('[data-office-dock="excel"]'), 'PPT gallery replaces Excel')
   evidence.officeModes = ['word', 'excel', 'ppt']
+  await waitFor(() => click('[data-desktop-ppt][data-selected="true"]'), 'Return to standard Composer')
+  await waitFor(() => click('button:is([aria-label="Send message"], [aria-label="发送消息"])'), 'Send fixture message')
+  const sessionMenu = 'button[aria-haspopup="menu"]:is([aria-label="More actions"], [aria-label="更多操作"])'
+  await waitFor(() => click(sessionMenu), 'Session Header menu')
+  const exportLabels = await waitFor(() => js(`(() => {
+    const items = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')]
+      .filter(item => item.getClientRects().length);
+    if (!items.some(item => /^(Copy Session as Markdown|复制会话为 Markdown)$/i.test(item.textContent.trim()))) return false;
+    return items.map(item => item.textContent.trim());
+  })()`), 'visible Session export options')
+  if (exportLabels.length !== 2 || !exportLabels.some(label => /^(Download session log|下载 Session 日志)$/i.test(label))) {
+    throw Error('Unexpected Session Header menu: ' + JSON.stringify(exportLabels))
+  }
+  await waitFor(() => click(sessionMenu), 'Session Header menu close')
+  evidence.sessionExportMenu = true
   writeFileSync(join(root, 'evidence.json'), JSON.stringify(evidence))
   await capture(window, 'ui.png')
   console.log('FORK-UI-ACCEPTANCE-COMPLETE')

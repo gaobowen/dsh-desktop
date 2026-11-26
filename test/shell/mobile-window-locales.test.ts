@@ -14,6 +14,7 @@ it.each(locales)('localizes the daily mobile startup feedback in %s without open
   // Host readiness is checked before the bridge is used.
   const bridge = {} as Parameters<typeof presentMobilePairing>[0]['bridge']
   expect(await presentMobilePairing({ bridge, locale, hostReady: false })).toBeUndefined()
+  expect(desktopDailyText(locale, 'mobileWait')).toContain('VinaHarness')
   expect(native.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
     message: desktopDailyText(locale, 'mobileStarting'), detail: desktopDailyText(locale, 'mobileWait')
   }))

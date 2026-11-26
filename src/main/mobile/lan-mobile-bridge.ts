@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import QRCode from 'qrcode'
 import WebSocket from 'ws'
+import { MOBILE_BRAND_MARK_URL, MOBILE_TOUCH_ICON_URL } from './brand'
 import {
   ensureCloudflaredBinary,
   startCloudflareQuickTunnel
@@ -99,7 +100,7 @@ export interface LanMobileBridgeOptions {
   /** Per-process Harness launch token, traded once for a session cookie. */
   harnessAuthToken?(): string | undefined
   locale?: 'en' | 'zh' | (() => 'en' | 'zh')
-  brandLogoPaths?: { light: string; dark: string }
+  brandMarkPath?: string
   appIconPath?: string
   port?: number
   cloudflaredCacheDir?: string
@@ -696,14 +697,13 @@ export class LanMobileBridge {
         : transportAddress
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
-    if (request.method === 'GET' && url.pathname.startsWith('/brand-logo/')) {
-      const variant = url.pathname === '/brand-logo/dark' ? 'dark' : 'light'
-      const path = this.options.brandLogoPaths?.[variant]
+    if (request.method === 'GET' && url.pathname === MOBILE_BRAND_MARK_URL) {
+      const path = this.options.brandMarkPath
       if (!path) return this.text(response, 404, 'Brand asset not found.')
       try {
         const body = await readFile(path)
         response.statusCode = 200
-        response.setHeader('content-type', 'image/png')
+        response.setHeader('content-type', 'image/svg+xml')
         response.setHeader('cache-control', 'public, max-age=3600')
         response.end(body)
       } catch {
@@ -712,7 +712,7 @@ export class LanMobileBridge {
       return
     }
 
-    if (request.method === 'GET' && url.pathname === '/app-icon') {
+    if (request.method === 'GET' && url.pathname === MOBILE_TOUCH_ICON_URL) {
       const path = this.options.appIconPath
       if (!path) return this.text(response, 404, 'App icon not found.')
       try {

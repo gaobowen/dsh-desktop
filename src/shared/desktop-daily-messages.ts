@@ -1,8 +1,8 @@
 import type { DesktopLocale } from './desktop-locale'
 
 const en = {
-  mobileStarting: 'Harness is still starting.',
-  mobileWait: 'Wait until DSH Desktop is ready, then connect your phone again.',
+  mobileStarting: 'VinaHarness is still starting.',
+  mobileWait: 'Wait until VinaHarness is ready, then connect your phone again.',
   mobileFailed: 'Failed to start mobile bridge.',
   tryAgain: 'Please try again.',
   repairOpenFailed: 'The repair agent session could not be opened',
@@ -17,7 +17,7 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
   en,
   zh: {
     mobileStarting: '桌面服务还在启动。',
-    mobileWait: '等 DSH Desktop 就绪后再连接手机。',
+    mobileWait: '等 VinaHarness 就绪后再连接手机。',
     mobileFailed: '手机桥没有启动。',
     tryAgain: '请再试一次。',
     repairOpenFailed: '无法打开智能修复 Agent 会话',
@@ -28,8 +28,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     harnessStopFailed: 'Harness 没有停下来，请再试一次。'
   },
   ja: {
-    mobileStarting: 'Harness はまだ起動中です。',
-    mobileWait: 'DSH Desktop の準備ができてから、もう一度接続してください。',
+    mobileStarting: 'VinaHarness はまだ起動中です。',
+    mobileWait: 'VinaHarness の準備ができてから、もう一度接続してください。',
     mobileFailed: 'モバイルブリッジを起動できませんでした。',
     tryAgain: '再試行してください。',
     repairOpenFailed: '修復エージェントのセッションを開けませんでした',
@@ -40,8 +40,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     harnessStopFailed: 'Harness を停止できませんでした。再試行してください。'
   },
   es: {
-    mobileStarting: 'Harness se está iniciando.',
-    mobileWait: 'Espera a que DSH Desktop esté listo y vuelve a conectar el teléfono.',
+    mobileStarting: 'VinaHarness se está iniciando.',
+    mobileWait: 'Espera a que VinaHarness esté listo y vuelve a conectar el teléfono.',
     mobileFailed: 'No se pudo iniciar el puente móvil.',
     tryAgain: 'Inténtalo de nuevo.',
     repairOpenFailed: 'No se pudo abrir la sesión del agente de reparación',
@@ -52,8 +52,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     harnessStopFailed: 'Harness no se detuvo. Inténtalo de nuevo.'
   },
   fr: {
-    mobileStarting: 'Harness est en cours de démarrage.',
-    mobileWait: 'Attendez que DSH Desktop soit prêt, puis reconnectez votre téléphone.',
+    mobileStarting: 'VinaHarness est en cours de démarrage.',
+    mobileWait: 'Attendez que VinaHarness soit prêt, puis reconnectez votre téléphone.',
     mobileFailed: 'Impossible de démarrer la passerelle mobile.',
     tryAgain: 'Réessayez.',
     repairOpenFailed: 'Impossible d’ouvrir la session de l’agent de réparation',
@@ -64,8 +64,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     harnessStopFailed: 'Harness ne s’est pas arrêté. Réessayez.'
   },
   de: {
-    mobileStarting: 'Harness wird noch gestartet.',
-    mobileWait: 'Warte, bis DSH Desktop bereit ist, und verbinde das Telefon erneut.',
+    mobileStarting: 'VinaHarness wird noch gestartet.',
+    mobileWait: 'Warte, bis VinaHarness bereit ist, und verbinde das Telefon erneut.',
     mobileFailed: 'Die Mobilgerätebrücke konnte nicht gestartet werden.',
     tryAgain: 'Bitte erneut versuchen.',
     repairOpenFailed: 'Die Sitzung des Reparaturagenten konnte nicht geöffnet werden',
@@ -76,8 +76,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     harnessStopFailed: 'Harness wurde nicht beendet. Bitte erneut versuchen.'
   },
   ru: {
-    mobileStarting: 'Harness ещё запускается.',
-    mobileWait: 'Дождитесь готовности DSH Desktop и подключите телефон снова.',
+    mobileStarting: 'VinaHarness ещё запускается.',
+    mobileWait: 'Дождитесь готовности VinaHarness и подключите телефон снова.',
     mobileFailed: 'Не удалось запустить мобильный мост.',
     tryAgain: 'Повторите попытку.',
     repairOpenFailed: 'Не удалось открыть сеанс агента восстановления',
@@ -88,8 +88,8 @@ const messages: Record<DesktopLocale, Record<DesktopDailyMessageKey, string>> = 
     harnessStopFailed: 'Harness не остановился. Повторите попытку.'
   },
   pt: {
-    mobileStarting: 'O Harness ainda está iniciando.',
-    mobileWait: 'Aguarde o DSH Desktop ficar pronto e conecte o telefone novamente.',
+    mobileStarting: 'O VinaHarness ainda está iniciando.',
+    mobileWait: 'Aguarde o VinaHarness ficar pronto e conecte o telefone novamente.',
     mobileFailed: 'Não foi possível iniciar a ponte móvel.',
     tryAgain: 'Tente novamente.',
     repairOpenFailed: 'Não foi possível abrir a sessão do agente de reparo',

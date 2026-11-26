@@ -25,10 +25,51 @@ try {
       const splash = desktopFileUrl(${JSON.stringify(join(root, 'build', 'splash.html'))}, { theme: 'light' })
       assert.equal(await navigateDesktopWindow(window, splash, () => cancelled), true)
       console.log('Native splash loaded')
-      const image = await window.webContents.capturePage()
-      assert.equal(image.isEmpty(), false)
-      const pixels = image.toBitmap()
-      assert.ok(pixels.some((value, index) => index % 4 !== 3 && value !== pixels[index % 4]), 'Splash capture is blank')
+      const contents = window.webContents
+      const readSplash = () => contents.executeJavaScript('(' + String(async () => {
+        const image = document.querySelector('.mark')
+        await image.decode()
+        const { x, y, width, height } = image.getBoundingClientRect()
+        return {
+          brand: document.querySelector('h1').textContent,
+          background: getComputedStyle(document.body).backgroundColor,
+          rect: { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
+        }
+      }) + ')()')
+      const captureMark = async rect => {
+        const image = await contents.capturePage(rect)
+        assert.equal(image.isEmpty(), false)
+        return image.toBitmap()
+      }
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      const verifyMark = async (scheme, motion) => {
+        await contents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [
+          { name: 'prefers-color-scheme', value: scheme },
+          { name: 'prefers-reduced-motion', value: motion }
+        ] })
+        assert.equal(await navigateDesktopWindow(window, splash, () => cancelled), true)
+        const state = await readSplash()
+        assert.equal(state.brand, 'VinaHarness')
+        assert.equal(state.background, scheme === 'dark' ? 'rgb(21, 22, 24)' : 'rgb(251, 251, 251)')
+        const first = await captureMark(state.rect)
+        assert.ok(first.some((value, index) => index % 4 !== 3 && value !== first[index % 4]), 'VinaHarness mark is blank')
+        await wait(400)
+        const next = await captureMark(state.rect)
+        if (motion === 'reduce') {
+          assert.ok(first.equals(next), 'Reduced-motion startup mark moved')
+        } else {
+          await wait(400)
+          assert.ok(!first.equals(next) || !first.equals(await captureMark(state.rect)), 'Startup mark did not animate')
+        }
+      }
+      contents.debugger.attach()
+      try {
+        await verifyMark('light', 'no-preference')
+        await verifyMark('dark', 'reduce')
+      } finally {
+        contents.debugger.detach()
+      }
+      console.log('VinaHarness motion, dark theme, and reduced-motion fallback verified')
       const missing = desktopFileUrl(${JSON.stringify(join(temporary, 'missing.html'))})
       await assert.rejects(navigateDesktopWindow(window, missing, () => false), error => error.code === 'ERR_FILE_NOT_FOUND')
       console.log('Missing resource cause retained')

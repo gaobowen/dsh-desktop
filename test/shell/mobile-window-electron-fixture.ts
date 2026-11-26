@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { ChildProcess } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, nativeImage, session } from 'electron'
 import { LanMobileBridge } from '../../src/main/mobile/lan-mobile-bridge'
 import type { InternetTunnelInstance } from '../../src/main/mobile/internet-tunnel'
 import { presentMobilePairing } from '../../src/main/shell/mobile-window'
@@ -172,6 +172,73 @@ async function acceptFreshLanReconnect(): Promise<void> {
   console.log('PASS lan-reconnect')
 }
 
+async function acceptMobileBrand(): Promise<void> {
+  const { DSH_MOBILE_FIXTURE_MARK: brandMarkPath, DSH_MOBILE_FIXTURE_ICON: appIconPath } = process.env
+  assert.ok(brandMarkPath && appIconPath, 'Fixture brand asset paths must be set')
+  const pin = '138205'
+  const bridge = new LanMobileBridge({
+    harnessUrl: () => undefined,
+    port: 0,
+    locale: 'en',
+    brandMarkPath,
+    appIconPath,
+    pairingPinStore: { load: () => ({ pin, pinConsent: true }), save: () => true },
+    createCloudflareTunnel: async port => ({
+      provider: 'cloudflare',
+      url: `http://127.0.0.1:${port}`,
+      process: new ChildProcess(),
+      stop: async () => {}
+    })
+  })
+  bridges.push(bridge)
+  const desktop = await open(bridge)
+  await pageIs(desktop, `${internet} && document.getElementById("qrCode").querySelector("svg")`)
+  const brandVisible = `document.title.startsWith('VinaHarness · ') &&
+    document.querySelector('.brand')?.textContent === 'VinaHarness' &&
+    document.querySelector('.brand img')?.naturalWidth > 0 &&
+    document.querySelector('.brand img')?.getBoundingClientRect().width > 0`
+  await pageIs(desktop, brandVisible)
+
+  const phone = new BrowserWindow({ show: false, width: 390, height: 844, webPreferences: { sandbox: true } })
+  // Classify only this Window's loopback traffic as tunnel traffic, with no public relay.
+  const webRequest = phone.webContents.session.webRequest
+  webRequest.onBeforeSendHeaders((details, callback) => {
+    if (details.webContentsId === phone.webContents.id) {
+      details.requestHeaders['CF-Connecting-IP'] = '192.0.2.42'
+      details.requestHeaders['CF-Ray'] = 'mobile-brand-fixture'
+    }
+    callback({ requestHeaders: details.requestHeaders })
+  })
+  try {
+    const pairingUrl = bridge.snapshot().pairingUrl
+    assert.ok(pairingUrl)
+    await phone.loadURL(pairingUrl)
+    await pageIs(phone, `${brandVisible} && document.querySelector('h1')?.textContent === 'Enter pairing password'`)
+    await phone.webContents.executeJavaScript(`(() => {
+      document.getElementById('pin').value = ${JSON.stringify(pin)};
+      document.querySelector('form').requestSubmit();
+    })()`)
+    await pageIs(phone, `${brandVisible} && document.title === 'VinaHarness · Mobile access' &&
+      document.querySelector('[name="apple-mobile-web-app-title"]')?.content === 'VinaHarness'`)
+    assert.equal(bridge.snapshot().connected, true)
+
+    const iconHref: unknown = await phone.webContents.executeJavaScript('document.querySelector(\'link[rel="apple-touch-icon"]\').href')
+    assert.equal(typeof iconHref, 'string')
+    const icon = await fetch(String(iconHref))
+    assert.equal(icon.headers.get('content-type'), 'image/png')
+    assert.deepEqual(nativeImage.createFromBuffer(Buffer.from(await icon.arrayBuffer())).getSize(), { width: 180, height: 180 })
+
+    await phone.loadURL(new URL('/disconnected', pairingUrl).href)
+    await pageIs(phone, `${brandVisible} && document.title === 'VinaHarness · Reconnect'`)
+    console.log('PASS branding')
+  } finally {
+    webRequest.onBeforeSendHeaders(null)
+    phone.destroy()
+    desktop.destroy()
+    await bridge.stop()
+  }
+}
+
 app.whenReady().then(async () => {
   const externalRequests: string[] = []
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
@@ -184,6 +251,7 @@ app.whenReady().then(async () => {
     await acceptSuccessAndReuse()
     await acceptFailure()
     await acceptFreshLanReconnect()
+    await acceptMobileBrand()
     assert.deepEqual(externalRequests, [], 'The renderer must not request external resources')
   } finally {
     for (const release of releasePending) release()

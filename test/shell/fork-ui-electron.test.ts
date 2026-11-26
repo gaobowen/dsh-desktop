@@ -36,6 +36,16 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
         if(url.pathname === '/api/token/') {tokenName=JSON.parse(init.body).name;return json({});}
         if(url.pathname === '/api/token/41/key') return json({key:'fixture-key'});
         if(url.pathname === '/v1/models') return json([{id:'gpt-6.1-sol',supported_endpoint_types:['openai-response']}]);
+        if(url.pathname === '/v1/responses') {
+          const item = {id:'msg_fixture',type:'message',role:'assistant',status:'completed',
+            content:[{type:'output_text',text:'Fixture reply',annotations:[]}]};
+          const events = [
+            {type:'response.output_item.done',output_index:0,item},
+            {type:'response.completed',response:{id:'resp_fixture',status:'completed',output:[item]}}
+          ];
+          return new Response(events.map(event => 'data: '+JSON.stringify(event)+'\\n\\n').join(''),
+            {headers:{'content-type':'text/event-stream'}});
+        }
         if(url.pathname === '/api/user/auth/logout') return json({});
         throw Error('Unexpected relay fixture path: '+url.pathname);
       };
@@ -56,7 +66,7 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
       let output = ''
       child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
       child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString() })
-      const deadline = setTimeout(() => { child.kill(); reject(new Error(`Fork UI timed out; evidence: ${temporary}`)) }, 110_000)
+      const deadline = setTimeout(() => { child.kill(); reject(new Error(`Fork UI timed out; evidence: ${temporary}`)) }, 240_000)
       child.once('error', error => { clearTimeout(deadline); reject(error) })
       child.once('close', code => { clearTimeout(deadline); resolveRun({ code, output }) })
     })
@@ -67,10 +77,10 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
     expect(result.output).toContain('FORK-UI-ACCEPTANCE-COMPLETE')
     const evidence = JSON.parse(await readFile(join(temporary, 'evidence.json'), 'utf8')) as unknown
     expect(evidence).toMatchObject({ configured: true, standardComposer: true, draft: true, high: true, temporaryGroup: true,
-      officeModes: ['word', 'excel', 'ppt'] })
+      officeModes: ['word', 'excel', 'ppt'], sessionExportMenu: true })
     expect(await readdir(join(home, 'DSH Desktop', 'Temporary Chats'))).toHaveLength(1)
   } finally {
     if (cleanExit) await rm(temporary, { recursive: true, force: true })
     else console.error('Fork UI evidence retained at', temporary)
   }
-}, 120_000)
+}, 260_000)

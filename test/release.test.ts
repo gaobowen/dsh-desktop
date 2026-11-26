@@ -16,6 +16,28 @@ const releaseAssets = [
 const HARNESS_VERSION = '0.2.2-rc.1'
 
 describe('GitHub release contract', () => {
+  it('builds Windows notification area, taskbar, and desktop icon sizes', async () => {
+    const icon = await readFile(path.join(projectRoot, '.build/brand-assets/windows-icon.ico'))
+    const sizes = [16, 20, 24, 32, 40, 48, 64, 256]
+    expect(icon.readUInt16LE(2)).toBe(1)
+    expect(icon.readUInt16LE(4)).toBe(sizes.length)
+    let expectedOffset = 6 + sizes.length * 16
+    for (const [index, size] of sizes.entries()) {
+      const entry = 6 + index * 16
+      expect(icon.readUInt8(entry)).toBe(size % 256)
+      expect(icon.readUInt8(entry + 1)).toBe(size % 256)
+      const length = icon.readUInt32LE(entry + 8)
+      const offset = icon.readUInt32LE(entry + 12)
+      expect(offset).toBe(expectedOffset)
+      const png = icon.subarray(offset, offset + length)
+      expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+      expect(png.readUInt32BE(16)).toBe(size)
+      expect(png.readUInt32BE(20)).toBe(size)
+      expectedOffset += length
+    }
+    expect(expectedOffset).toBe(icon.length)
+  })
+
   it('keeps the package and lockfile versions aligned', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
@@ -177,8 +199,8 @@ describe('GitHub release contract', () => {
         asarUnpack: string[]
         afterPack?: string
         extraResources: Array<{ from: string; to: string }>
-        win: { target: Array<{ target: string; arch: string[] }>; requestedExecutionLevel?: string }
-        nsis: { artifactName: string; include: string }
+        win: { icon: string; target: Array<{ target: string; arch: string[] }>; requestedExecutionLevel?: string }
+        nsis: { artifactName: string; include: string; createDesktopShortcut: boolean }
         portable?: unknown
       }
     }
@@ -196,6 +218,12 @@ describe('GitHub release contract', () => {
       from: 'build/app-icon.png',
       to: 'icon.png'
     })
+    expect(packageJson.build.win.icon).toBe('.build/brand-assets/windows-icon.ico')
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: packageJson.build.win.icon,
+      to: 'windows-icon.ico'
+    })
+    expect(packageJson.build.nsis.createDesktopShortcut).toBe(true)
     for (const removed of [
       'build/harness-node-entry.mjs',
       'build/host-module-fallback.mjs',
@@ -216,6 +244,14 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/splash.html',
       to: 'splash.html'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/vina-brand-mark.svg',
+      to: 'vina-brand-mark.svg'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: '.build/brand-assets/mobile-icon.png',
+      to: 'mobile-icon.png'
     })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/startup-whale.gif',

@@ -10,12 +10,13 @@
         "数据目录是 userData/harness，不用 ~/.dsh",
         "fork 保留 VinaRouter 登录、模型协议和 High 默认值；普通 profile 挂载自有插件，Word/Excel 使用轻量会话状态入口，PPT Composer 按操作加载转换与渲染依赖",
         "临时会话通过可信主 frame 的专用 IPC 创建独立目录，仍由 Harness 创建 Session 和标准 Composer",
-        "不接入官方强制更新、欢迎窗、托盘和官方更新；启动页用现有鲸鱼页 splash.html",
+        "不接入官方强制更新、欢迎窗、托盘和官方更新；启动页使用 splash.html 中的 VinaHarness 动效",
         "最小壳只接启动、协议、窗口安全和后端生命周期",
         "启动前复制 profiles/web，关闭产品分析、官方账号界面和官方品牌，侧边栏品牌改挂 dsh-desktop-client-ui，普通 profile 再挂 dsh-desktop-workbenches、dsh-desktop-market-installer、dsh-desktop-office、dsh-ppt-composer 和 dsh-desktop-vinabot；Safe Mode 不挂工作台、市场、Office、VinaRouter 和 PPT，且不把账号会话接到用量页或充值页",
         "页面脚本之前把当前 profile 的 desktop-storage.json 交给 localStorage，官方界面打开已记住的会话，不在已有工作区新建空会话",
         "复制 profile 前询问是否导入网页版家目录；已有桌面数据、Safe Mode 或关闭窗口都不导入，网页版目录只读",
         "macOS 应用菜单依次是关于 DSH Desktop、检查产品更新、企业版；普通启动下一项以 --safe-mode 重启。Safe Mode 用现有 safe-mode.html 管理 desktop profile 的第三方插件。手机配对走侧边栏，不放进这个菜单。修复代理走侧边栏和 Safe Mode 页，不放进应用菜单，也不使用官方强制更新",
+        "手机配对桥从应用资源目录提供 VinaHarness SVG 和同源生成的手机主屏幕 PNG，配对窗口也使用 VinaHarness 图标",
         "致命失败写入 DSH_HOME/fatal-report.json。普通 profile 上能点名的第三方插件进入现有 plugin-recovery.html，只停用并重启；其它失败仍是短对话框。不使用官方 DesktopFatalRecovery",
         "安装包中的 primary runtime 位于 Resources/office-runtime/primary-runtime",
         "侧边栏浏览器沿用现有客人策略，不另写一份官方 browser-guests",
@@ -24,7 +25,7 @@
         "启动 Host 前读取 POSIX 登录 shell 环境；Windows 使用继承的注册表环境，不读 PowerShell profile",
         "Windows 源码启动给 Harness loader 更长的冷启动时间；主进程输出等待进度和就绪状态",
         "账号视图接收真实运行平台；Linux 不冒充 macOS，也不启用未支持的上游账号页面协议",
-        "Linux 与 Windows 复用隐藏标题栏、原生窗口按钮 overlay 及应用/编辑菜单；托盘仍仅 Windows 启用"
+        "Linux 与 Windows 复用隐藏标题栏、原生窗口按钮 overlay 及应用/编辑菜单；Windows 窗口、托盘和程序图标共用由 VinaHarness SVG 生成的 ICO"
       ]
     },
     {

@@ -16,13 +16,15 @@ describe('LAN mobile page', () => {
     for (const script of scripts) expect(() => new Function(script)).not.toThrow()
   })
 
-  it('uses the DSH brand color and follows system dark mode', () => {
+  it('uses the VinaHarness mark and follows system dark mode', () => {
     const html = renderMobilePage({ locale: 'en' })
     expect(html).toContain('--brand:#4d6bfe')
     expect(html).toContain('prefers-color-scheme:dark')
     expect(html).toContain('content="#ffffff" media="(prefers-color-scheme:light)"')
     expect(html).toContain('content="#141416" media="(prefers-color-scheme:dark)"')
-    expect(html).toContain('/brand-logo/light')
+    expect(html).toContain('<title>VinaHarness · Mobile access</title>')
+    expect(html).toContain('src="/brand-logo/vina.svg#mark"')
+    expect(html).toContain('Create a workspace in VinaHarness first.')
     expect(html).not.toContain('id="chatTitle"')
     expect(html).toContain('body.chat-open header{display:none}')
     expect(html).toContain('body.chat-open .shell{padding:env(safe-area-inset-top) 14px 0}')
@@ -132,7 +134,9 @@ describe('LAN mobile page', () => {
     expect(html).toContain("block?.type==='text'")
     expect(html).toContain('font-size:16px')
     expect(html).toContain('maximum-scale=1')
-    expect(html).toContain('rel="apple-touch-icon" href="/app-icon"')
+    expect(html).toContain('rel="apple-touch-icon" href="/app-icon/vina.png"')
+    expect(html).toContain('name="apple-mobile-web-app-title" content="VinaHarness"')
+    expect(html).not.toContain('href="/app-icon"')
     expect(html).toContain('apple-mobile-web-app-capable')
     expect(html).toContain("chunk.type!=='reasoning-delta'")
     expect(html).toContain('class=\"thinking\" data-state=')
@@ -219,12 +223,12 @@ describe('LAN mobile page', () => {
     expect(tunnelZh).not.toContain('连接到同一 Wi-Fi')
     for (const html of [zh, en]) {
       expect(html).toContain('prefers-color-scheme:dark')
-      expect(html).toContain('/brand-logo/light')
-      expect(html).toContain('/brand-logo/dark')
+      expect(html).toContain('src="/brand-logo/vina.svg#mark"')
+      expect(html).toContain('<span>VinaHarness</span>')
     }
   })
 
-  it('uses DSH styling on both pairing surfaces', () => {
+  it('uses VinaHarness branding on both pairing surfaces', () => {
     const desktop = renderDesktopPairingPage({
       qrSvg: '<svg></svg>',
       pairingUrl: 'http://192.168.1.2/pair?token=test',
@@ -234,7 +238,8 @@ describe('LAN mobile page', () => {
     })
     const phone = renderPairingPinPage('en')
     for (const html of [desktop, phone]) {
-      expect(html).toContain('/brand-logo/light')
+      expect(html).toContain('src="/brand-logo/vina.svg#mark"')
+      expect(html).toContain('<span>VinaHarness</span>')
       for (const script of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
         (match) => match[1]!
       ))
@@ -244,7 +249,7 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('class="pin-panel')
     expect(desktop).not.toContain('--request-bg:#f5f7ff')
     expect(desktop).toContain('prefers-color-scheme:dark')
-    expect(desktop).toContain('/brand-logo/dark')
+    expect(desktop).toContain('<title>VinaHarness · Connect Mobile Device</title>')
     expect(desktop).toContain('--bg:#141416')
     expect(desktop).toContain('.qr{display:inline-flex;background:#fff')
     expect(desktop).toContain('Creating a global network link')
@@ -300,13 +305,13 @@ describe('LAN mobile page', () => {
     expect(phone).toContain('prefers-color-scheme:dark')
     expect(phone).toContain('--brand:#4d6bfe')
     expect(phone).toContain('--bg:#141416')
-    expect(phone).toContain('/brand-logo/dark')
+    expect(phone).toContain('<title>VinaHarness · Enter pairing password</title>')
     expect(phone).toContain('background:var(--panel)')
     expect(phone).toContain('content="#141416" media="(prefers-color-scheme:dark)"')
     expect(phone).toContain("fetch('/pair/verify'")
     expect(phone).toContain('Enter pairing password')
     expect(phone).toContain('Show password on the computer')
-    expect(phone).toContain('Cannot reach the desktop. Start DSH Desktop and try again.')
+    expect(phone).toContain('Cannot reach the desktop. Start VinaHarness and try again.')
     expect(phone).toContain("location.replace('/')")
     expect(phone).not.toContain("location.href='/'")
   })
@@ -539,7 +544,7 @@ describe('LAN mobile page', () => {
     expect(desktop).not.toContain('id="copyToast"')
     expect(phone).toContain('输入连接密码')
     expect(phone).toContain('在电脑上查看密码')
-    expect(phone).toContain('暂时无法连接桌面端，请先启动 DSH Desktop。')
+    expect(phone).toContain('暂时无法连接桌面端，请先启动 VinaHarness。')
   })
 
   it('renders the temporary pin hint with remaining seconds from one helper', () => {

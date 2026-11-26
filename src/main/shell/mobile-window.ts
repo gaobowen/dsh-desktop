@@ -3,6 +3,7 @@ import type { DesktopLocale } from '../../shared/desktop-locale'
 import { desktopDailyText } from '../../shared/desktop-daily-messages'
 import { updateText } from '../../shared/desktop-update-messages'
 import { LanMobileBridge } from '../mobile/lan-mobile-bridge'
+import { MOBILE_BRAND_NAME } from '../mobile/brand'
 import { secureWindow } from '../security'
 import { shouldOpenInternetTunnel } from './mobile-pairing'
 
@@ -65,7 +66,7 @@ async function openMobilePairing(options: MobilePairingOptions): Promise<Browser
     height: 640,
     minWidth: 380,
     minHeight: 540,
-    title: pairingTitle(options.locale),
+    title: `${MOBILE_BRAND_NAME} · ${t('mobileWindowTitle')}`,
     ...(options.iconPath === undefined ? {} : { icon: options.iconPath }),
     ...(parent === undefined ? {} : { parent }),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#ffffff',
@@ -94,10 +95,6 @@ async function openMobilePairing(options: MobilePairingOptions): Promise<Browser
   }
   if (window.isDestroyed()) return undefined
   return window
-}
-
-function pairingTitle(locale: DesktopLocale): string {
-  return desktopDailyText(locale, 'mobileWindowTitle')
 }
 
 async function showNotice(

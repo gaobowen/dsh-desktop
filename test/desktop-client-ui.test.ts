@@ -11,7 +11,7 @@ interface Registration {
 }
 
 describe('DSH Desktop client slot occupants', () => {
-  it('registers one occupant per brand seat and keeps the official name mark-free', async () => {
+  it('registers the VinaHarness wordmark and shares the SVG between both brand slots', async () => {
     const source = await readFile(
       path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
@@ -52,8 +52,6 @@ describe('DSH Desktop client slot occupants', () => {
       type,
       props: { ...props, children }
     })
-    const BrandWordmark = vi.fn()
-    const FishLogo = vi.fn()
     const plugin = definition!.factory((id) => {
       if (id === 'react') {
         return {
@@ -63,7 +61,7 @@ describe('DSH Desktop client slot occupants', () => {
         }
       }
       if (id === '@deepseek-ai/dsh-client-ui-primitives') {
-        return { BrandWordmark, FishLogo }
+        return {}
       }
       throw new Error(`Unexpected client dependency: ${id}`)
     })
@@ -91,7 +89,6 @@ describe('DSH Desktop client slot occupants', () => {
     expect(registrations.map(({ config }) => config.name)).toEqual([
       'conversation.input.dock',
       'sidebar.settings.action',
-      'settings.sidebar.footer',
       'sidebar.brand.mark',
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
@@ -100,15 +97,7 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item'
     ])
-    const enterprise = registrations.find(({ config }) => config.name === 'settings.sidebar.footer')
-    expect(enterprise?.config.id).toBe('desktop-enterprise-entry')
-    const entry = enterprise!.component({ t: () => '了解企业版' }) as { type: unknown; props: Record<string, unknown> }
-    expect(entry.type).toBe('a')
-    expect(entry.props.href).toBe('https://dshdesktop.com/zh/enterprise/')
-    expect(entry.props.target).toBe('_blank')
-    expect(entry.props.rel).toBe('noopener noreferrer')
-    expect(entry.props.children).toContain('了解企业版')
-    // Desktop toolbar styles have an owned lifetime; branding stays in currentColor.
+    // Desktop toolbar styles have an owned lifetime.
     expect(appended).toHaveLength(1)
     expect(appended[0]?.textContent).toContain("[data-dsh-preset-search]")
     expect(appended[0]?.textContent).toContain("[data-dsh-market-nav-icon] span[class*=\"navIcon\"]")
@@ -119,23 +108,21 @@ describe('DSH Desktop client slot occupants', () => {
     const sidebarName = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.name'
     )!.component({}) as { type: unknown; props: Record<string, unknown> }
-    expect(sidebarName.type).toBe(BrandWordmark)
-    expect(sidebarName.props.includeMark).toBe(false)
+    expect(sidebarName.type).toBe('span')
+    expect(sidebarName.props.children).toEqual([
+      'Vina', { type: 'span', props: { children: ['Harness'] } }
+    ])
 
     const sidebarMark = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.mark'
     )!.component({ size: 24 }) as { type: unknown; props: Record<string, unknown> }
-    expect(sidebarMark.type).toBe('svg')
-    expect(sidebarMark.props.height).toBe(17)
-    const [markPath] = sidebarMark.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
-    if (!markPath) throw new Error('Expected the sidebar brand SVG path')
-    expect(markPath.type).toBe('path')
-    expect(markPath.props.fill).toBe('currentColor')
+    expect(sidebarMark.type).toBe('img')
+    expect(sidebarMark.props).toMatchObject({ src: '/assets/vina-brand-mark.svg#mark', width: 24, height: 24 * 24 / 31, alt: '' })
 
     const heroMark = registrations.find(
       ({ config }) => config.name === 'conversation.hero.brand.mark'
-    )!.component({ size: 48 }) as { type: unknown; props: Record<string, unknown> }
-    expect(heroMark.type).toBe(FishLogo)
-    expect(heroMark.props.size).toBe(48)
+    )!.component({ size: 34, className: 'hero-mark' }) as { type: unknown; props: Record<string, unknown> }
+    expect(heroMark.type).toBe('img')
+    expect(heroMark.props).toMatchObject({ src: sidebarMark.props.src, width: 34, height: 34 * 24 / 31, className: 'hero-mark' })
   })
 })

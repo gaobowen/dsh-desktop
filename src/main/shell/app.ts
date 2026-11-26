@@ -26,7 +26,6 @@ import {
 } from '../application-locale'
 import { defaultWebHome, type WebHomePreview } from '../profile/web-home-import'
 import { desktopHostStartupOptions, developmentEnvironment, skipBlockingWindowsDevHmr } from '../development-environment'
-import { desktopBrandLogoPaths } from './brand-logo'
 import { workspaceDirectoryPrompt } from './directory-picker'
 import { clearNativeLocaleAttempt, confirmNativeLocaleRestart, NativeDirectoryPicker, nativeLocaleRelaunchArguments, shouldCalibrateNativeLocale } from './native-locale'
 import { nativeLocaleMessages } from './native-locale-messages'
@@ -324,6 +323,14 @@ function packagedPagePath(name: string): string {
   return fileURLToPath(new URL(`../../build/${name}`, import.meta.url))
 }
 
+function windowsBrandIconPath(): string | undefined {
+  if (process.platform !== 'win32') return undefined
+  const icon = app.isPackaged
+    ? packagedPagePath('windows-icon.ico')
+    : fileURLToPath(new URL('../../.build/brand-assets/windows-icon.ico', import.meta.url))
+  return existsSync(icon) ? icon : undefined
+}
+
 function createWindow(
   preload: string,
   importPage: string,
@@ -337,6 +344,7 @@ function createWindow(
     minHeight: 600,
     show: false,
     title: app.getName(),
+    icon: windowsBrandIconPath(),
     ...desktopWindowChrome(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       preload,
@@ -639,9 +647,9 @@ async function main(): Promise<void> {
   }
   const refreshWindowsTray = (): void => {
     if (process.platform !== 'win32') return
-    const icon = packagedPagePath(app.isPackaged ? 'icon.png' : 'app-icon.png')
-    if (!existsSync(icon)) return
     if (windowsTray === undefined || windowsTray.isDestroyed()) {
+      const icon = windowsBrandIconPath() ?? packagedPagePath(app.isPackaged ? 'icon.png' : 'app-icon.png')
+      if (!existsSync(icon)) return
       windowsTray = new Tray(icon)
       windowsTray.on('click', showMainWindow)
     }
@@ -953,8 +961,10 @@ async function main(): Promise<void> {
     }
     return mainWindow
   }
-  const iconPath = existsSync(packagedPagePath('app-icon.png')) ? packagedPagePath('app-icon.png') : undefined
-  const brandLogos = desktopBrandLogoPaths([runtimeDir, primaryRuntime])
+  const mobileIconPath = app.isPackaged
+    ? packagedPagePath('mobile-icon.png')
+    : fileURLToPath(new URL('../../.build/brand-assets/mobile-icon.png', import.meta.url))
+  const pairingWindowIcon = windowsBrandIconPath() ?? mobileIconPath
   async function explicitDesktopLocale(): Promise<string | undefined> {
     if (reportedLocale !== undefined) return reportedLocale
     return savedDesktopLocaleValue(dshHome, safeMode ? SAFE_MODE_PROFILE : 'desktop').catch(error => {
@@ -1044,8 +1054,8 @@ async function main(): Promise<void> {
     harnessUrl: () => loopbackHarnessOrigin(hostUrl()),
     harnessCookie: () => hostSessionCookie(hostCookie()),
     locale: () => legacyLocale(menuLocale),
-    ...(iconPath === undefined ? {} : { appIconPath: iconPath }),
-    ...(brandLogos === undefined ? {} : { brandLogoPaths: brandLogos }),
+    appIconPath: mobileIconPath,
+    brandMarkPath: packagedPagePath('vina-brand-mark.svg'),
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
     forceCloudflareFailure: process.env.DSH_TUNNEL_FORCE_PINGGY === '1',
     tunnelLog: message => { console.warn(message) },
@@ -1081,7 +1091,7 @@ async function main(): Promise<void> {
       parent: window.isDestroyed() ? undefined : window,
       ...(mobileWindow === undefined ? {} : { current: mobileWindow }),
       locale: menuLocale,
-      ...(iconPath === undefined ? {} : { iconPath }),
+      iconPath: pairingWindowIcon,
       hostReady: hostUrl() !== undefined
     })
     if (opened !== undefined && opened !== mobileWindow) {

@@ -9,6 +9,21 @@ pre-upgrade customizations are saved at `codex/backup-pre-v0.14.0` (`3a794d5`).
 Only the fork `gaobowen/dsh-desktop` is a write destination; the local upstream
 remote has its push URL disabled. No release/tag publication is part of this upgrade.
 
+Cold startup and Harness restart load `build/splash.html` in development.
+Release builds package that page and its VinaHarness SVG side by side under
+`Resources`.
+The Desktop client plugin uses the same SVG for the sidebar and welcome view.
+The Sidebar patch restores its brand slots in the expanded native layout.
+Remove the outlet changes once upstream renders those slots itself.
+Brand preparation builds a Windows ICO from the SVG for the tray and window.
+The build embeds that ICO in the executable for Windows desktop shortcuts.
+The desktop pairing dialog and mobile pages use the same SVG. The phone's
+home screen uses a PNG generated from that artwork during brand preparation.
+The settings footer omits the enterprise link. The local
+`dsh-session-log-export@0.2.2-rc.1` patch keeps the Session Header menu
+limited to Markdown copy and Session log download. Remove the patch if
+upstream provides a setting for the Session Header feedback action.
+
 Loading changes cover Profile composition and backend/client activation. The
 new `src/main/shell/product-patch.ts` mounts VinaRouter from the actual installed
 host dependency closure in normal `desktop` profiles only; Safe Mode remains

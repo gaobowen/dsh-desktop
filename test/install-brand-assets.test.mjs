@@ -12,6 +12,7 @@ async function fixture(icons, run) {
     const script = path.join(root, 'scripts/release/install-brand-assets.mjs')
     await writeFile(script, await readFile(new URL('../scripts/release/install-brand-assets.mjs', import.meta.url)))
     for (const name of ['icon.png', 'logo-light.png', 'logo-dark.png']) await writeFile(path.join(root, 'build', name), 'test-icon')
+    await writeFile(path.join(root, 'build', 'vina-brand-mark.svg'), '<svg/>')
     await writeFile(path.join(dist, 'index.html'), '<link rel="icon" href="./favicon.svg" />')
     await writeFile(path.join(dist, 'manifest.webmanifest'), JSON.stringify({ name: 'Harness', icons }))
     await run({ dist, execute: () => execFileSync(process.execPath, [script], { encoding: 'utf8', stdio: 'pipe' }) })
@@ -38,6 +39,7 @@ describe('brand assets installation across Harness versions', () => {
         { src: '/dsh-desktop-logo.png', sizes: '1254x1254', type: 'image/png', purpose: 'any' }, custom
       ])
       expect(await readFile(path.join(dist, 'dsh-desktop-logo.png'), 'utf8')).toBe('test-icon')
+      expect(await readFile(path.join(dist, 'assets/vina-brand-mark.svg'), 'utf8')).toBe('<svg/>')
       execute()
       expect(await readFile(file, 'utf8')).toBe(first)
     })

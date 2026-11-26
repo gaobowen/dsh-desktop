@@ -6,7 +6,7 @@ const flatten = node => !node || typeof node !== 'object' ? [] : Array.isArray(n
   ? node.flatMap(flatten) : [node, ...flatten(node.props?.children)]
 const evaluate = node => typeof node.type === 'function' ? node.type(node.props) : node
 
-async function sidebar({ collapsed = false, panels = [], unpinned = [], contribution } = {}) {
+async function sidebar({ collapsed = false, desktop, panels = [], unpinned = [], contribution } = {}) {
   let plugin
   let registration
   let Root
@@ -16,7 +16,7 @@ async function sidebar({ collapsed = false, panels = [], unpinned = [], contribu
     let current = initial
     return { getSnapshot: () => current, set: value => { current = value }, subscribe: () => () => {} }
   }
-  const primitives = { Tooltip: 'Tooltip', Menu: 'Menu', useModalLayer() {}, isDarwinDesktop: () => false }
+  const primitives = { Tooltip: 'Tooltip', Menu: 'Menu', useModalLayer() {}, isDarwinDesktop: () => desktop === 'macOS' }
   const dependencies = {
     react: { useState: value => [value, () => {}], useRef: current => ({ current }), useEffect() {}, useLayoutEffect() {} },
     'react/jsx-runtime': { jsx, jsxs: jsx },
@@ -27,7 +27,7 @@ async function sidebar({ collapsed = false, panels = [], unpinned = [], contribu
   const sandbox = { window: { __ModuleLoader__: { load({ factory }) { plugin = factory(id => dependencies[id]) } } } }
   // Capture the public slot registration from the actual unchanged factory.
   vm.runInNewContext(await readFile(new URL('../node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js', import.meta.url), 'utf8'), sandbox)
-  sandbox.document = { documentElement: { hasAttribute: () => false } }
+  sandbox.document = { documentElement: { hasAttribute: name => name === 'data-windows-titlebar' && desktop === 'Windows' } }
   const startSession = vi.fn()
   const selectPanel = vi.fn()
   const toggleSidebar = vi.fn()
@@ -58,6 +58,21 @@ async function sidebar({ collapsed = false, panels = [], unpinned = [], contribu
 }
 
 const panels = [{ id: 'plugins', label: 'Plugins', order: 0 }, { id: 'schedules', label: 'Schedules', order: 1 }, { id: 'custom', label: 'Custom', order: 2 }]
+
+it.each(['Windows', 'macOS'])('mounts both expanded sidebar brand slots separately from the %s toggle', async desktop => {
+  const shell = await sidebar({ desktop })
+  const tree = flatten(shell.render())
+  const brand = tree.find(node => node.props['data-dsh-sidebar-brand-identity'])
+  expect(brand?.type).toBe('span')
+  expect(flatten(brand).filter(node => node.type === 'slot').map(node => node.props.name)).toEqual([
+    'sidebar.brand.mark', 'sidebar.brand.name'
+  ])
+  const toggle = tree.filter(node => node.props['data-sidebar-toggle'])
+  expect(toggle).toHaveLength(1)
+  toggle[0].props.onClick()
+  expect(shell.toggleSidebar).toHaveBeenCalledOnce()
+  expect(shell.startSession).not.toHaveBeenCalled()
+})
 
 describe('sidebar primary navigation public slot', () => {
   it('keeps native pinned rows and More callbacks when no contribution is registered', async () => {
