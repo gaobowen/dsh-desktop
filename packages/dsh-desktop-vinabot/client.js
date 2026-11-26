@@ -19,9 +19,9 @@ window.__ModuleLoader__.load({
     const zh = {
       nav: 'VinaRouter',
       onboardingTitle: '连接 VinaRouter',
-      onboardingIntro: '登录中转站后，DSH Desktop 会自动准备本机专用 API 密钥，并让你选择可用模型。',
+      onboardingIntro: '登录中转站后，VinaHarness 会自动准备本机专用 API 密钥，并让你选择可用模型。',
       settingsTitle: 'VinaRouter 中转站',
-      settingsIntro: '管理 DSH Desktop 使用的 VinaRouter 模型连接。账号密码和面板登录令牌不会保存。',
+      settingsIntro: '管理 VinaHarness 使用的 VinaRouter 模型连接。账号密码和面板登录令牌不会保存。',
       username: '用户名',
       password: '密码',
       login: '登录并获取模型',
@@ -68,9 +68,9 @@ window.__ModuleLoader__.load({
     const en = {
       nav: 'VinaRouter',
       onboardingTitle: 'Connect VinaRouter',
-      onboardingIntro: 'Sign in to the gateway. DSH Desktop will prepare a device API key and let you choose an available model.',
+      onboardingIntro: 'Sign in to the gateway. VinaHarness will prepare a device API key and let you choose an available model.',
       settingsTitle: 'VinaRouter gateway',
-      settingsIntro: 'Manage the VinaRouter model connection used by DSH Desktop. Passwords and dashboard tokens are never stored.',
+      settingsIntro: 'Manage the VinaRouter model connection used by VinaHarness. Passwords and dashboard tokens are never stored.',
       username: 'Username',
       password: 'Password',
       login: 'Sign in and load models',

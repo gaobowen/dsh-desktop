@@ -40,11 +40,15 @@ describe('Windows caption menus', () => {
     expect(isDesktopMenuCommand({ command: 'quit' })).toBe(false)
   })
 
-  it('keeps every Desktop command in the application menu, including the View group', () => {
+  it('keeps the application commands and separates View from Exit once', () => {
     const { run, actions } = record()
-    clickAll(windowsMenuTemplate('application', 'zh', 1, actions))
+    const application = windowsMenuTemplate('application', 'zh', 1, actions)
+    clickAll(application)
     const editing = new Set<DesktopMenuCommand>(['undo', 'redo', 'cut', 'copy', 'paste', 'select-all'])
     expect(new Set(run)).toEqual(new Set(desktopMenuCommands.filter((command) => !editing.has(command))))
+    expect(application.map(item => item.label ?? item.type)).toEqual([
+      '连接手机…', '重启', '以安全模式重启…', '显示 Harness 日志', 'separator', '视图', 'separator', '退出'
+    ])
   })
 
   it('sends editing shortcuts as key events so editor-owned history receives them', () => {
@@ -68,10 +72,8 @@ describe('Windows caption menus', () => {
     expect(labels(windowsMenuTemplate('application', 'en', 0.9, actions))).toContain('Actual Size (now 90%)')
     const chinese = labels(windowsMenuTemplate('application', 'zh', 1, actions))
     const english = labels(windowsMenuTemplate('application', 'en', 1, actions))
-    expect(chinese.indexOf('了解企业版')).toBe(chinese.indexOf('关于 DSH Desktop') + 1)
-    expect(english.indexOf('Explore Enterprise')).toBe(english.indexOf('About DSH Desktop') + 1)
     expect(chinese).not.toContain('导出 Session 日志…')
-    expect(labels(windowsMenuTemplate('application', 'en', 1, actions))).not.toContain('Export Session Log…')
+    expect(english).not.toContain('Export Session Log…')
     expect(labels(windowsMenuTemplate('edit', 'zh', 1, actions))).toEqual(
       ['撤销', '重做', '剪切', '复制', '粘贴', '删除', '全选']
     )

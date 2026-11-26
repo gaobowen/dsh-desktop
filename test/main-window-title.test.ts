@@ -25,6 +25,6 @@ describe('main window title', () => {
   it('does not give the startup page an empty document title', async () => {
     const splash = await readFile(join(sourceRoot, 'build/splash.html'), 'utf8')
 
-    expect(splash).toContain('<title>DSH Desktop</title>')
+    expect(splash).toContain('<title>VinaHarness</title>')
   })
 })

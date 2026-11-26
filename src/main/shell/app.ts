@@ -163,7 +163,7 @@ function configureDesktopIdentity(): void {
     process.execPath.toLowerCase().includes('bisheng') ||
     hasEnterprisePlugin()
   )
-  const defaultProdName = isBisheng ? 'BISHENG' : 'DSH Desktop'
+  const defaultProdName = isBisheng ? 'BISHENG' : 'VinaHarness'
 
   const development = desktopDevelopmentBuild(metadata)
   const environment = developmentEnvironment(development, 43129)
@@ -176,7 +176,7 @@ function configureDesktopIdentity(): void {
     return
   }
   if (!isBisheng) {
-    app.setName('DSH Desktop')
+    app.setName(defaultProdName)
     // Keep the historical lowercase directory. Deriving it from the product name
     // would hide the existing sessions on an ordinary upgrade.
     app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
@@ -567,7 +567,6 @@ async function main(): Promise<void> {
           ? {}
           : { restartSafeMode: () => { restartInSafeMode() } }),
         showHarnessLog: () => { shell.showItemInFolder(join(app.getPath('logs'), 'harness.log')) },
-        checkForUpdates: () => { void checkForUpdates(true).catch((error: unknown) => { console.error(error) }) },
         quit: () => { app.quit() }
       })
       Menu.setApplicationMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]))
@@ -1291,9 +1290,6 @@ async function main(): Promise<void> {
       case 'show-harness-log':
         shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
         return
-      case 'check-for-updates':
-        await checkForUpdates(true)
-        return
       case 'reload':
         contents.reload()
         return
@@ -1311,12 +1307,6 @@ async function main(): Promise<void> {
         return
       case 'toggle-fullscreen':
         owner.setFullScreen(!owner.isFullScreen())
-        return
-      case 'about':
-        await presentAbout(owner, menuLocale)
-        return
-      case 'explore-enterprise':
-        await shell.openExternal(ENTERPRISE_URL)
         return
       case 'quit':
         app.quit()

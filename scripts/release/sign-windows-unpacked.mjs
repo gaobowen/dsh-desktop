@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process'
 import { open, readdir, rm, stat } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { basename, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
+const { build } = createRequire(import.meta.url)('../../package.json')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /** Inspect content, including extensionless PE files. A broken MZ header must
@@ -108,7 +110,7 @@ export function buildJsignArgs({
   pinFile,
   targetFile,
   tsaUrl = 'http://timestamp.digicert.com',
-  name = 'DSH Desktop',
+  name = build.productName,
   url = 'https://www.dshdesktop.com'
 }) {
   return [

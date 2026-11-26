@@ -49,7 +49,7 @@ it.each([['production', packageJson.build, 'dsh-desktop'], ['development', devCo
     // so their failures cannot escape as unhandled background rejections.
     await target.scriptFiles
     expect(await target.computeFpmMetaInfoOptions()).toEqual({
-      name: packageName, maintainer: 'DataElement', vendor: 'DataElement', url: packageJson.homepage
+      name: packageName, maintainer: '香港來畫科技有限公司', vendor: '香港來畫科技有限公司', url: packageJson.homepage
     })
     delete target.options.maintainer
     await expect(target.computeFpmMetaInfoOptions()).rejects.toThrow('email')
@@ -66,7 +66,7 @@ it('honors builder naming precedence and the package-name fallback, not the disp
   }
 })
 
-it.each(['DSH Desktop', 'DSH Desktop Dev'])('preserves macOS Helper and Windows exe naming for %s', product => {
+it.each([packageJson.build.productName, devConfig.productName])('resolves the configured macOS Helper and Windows exe names for %s', product => {
   const packager = { appInfo: { productFilename: product }, executableName: 'ignored-linux-name' }
   expect(packagedLayout({ appOutDir: root, electronPlatformName: 'darwin', packager })).toEqual({
     resources: join(root, `${product}.app`, 'Contents', 'Resources'),

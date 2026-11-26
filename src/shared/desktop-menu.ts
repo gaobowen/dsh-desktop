@@ -13,7 +13,6 @@ export const desktopMenuCommands = [
   'restart-harness',
   'safe-mode',
   'show-harness-log',
-  'check-for-updates',
   'undo',
   'redo',
   'cut',
@@ -26,8 +25,6 @@ export const desktopMenuCommands = [
   'zoom-in',
   'zoom-out',
   'toggle-fullscreen',
-  'about',
-  'explore-enterprise',
   'quit'
 ] as const
 

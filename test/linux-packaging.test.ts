@@ -25,11 +25,11 @@ describe('Linux native packaging', () => {
   it('ships a deb with a stable executable and retains every runtime gate', () => {
     expect(manifest.build.linux).toMatchObject({
       executableName: 'dsh-desktop',
-      maintainer: 'DataElement',
+      maintainer: '香港來畫科技有限公司',
       category: 'Utility',
       target: [{ target: 'deb', arch: ['x64'] }]
     })
-    expect(manifest.build.linux.artifactName).toBe('dsh-desktop-linux-${arch}-${version}.${ext}')
+    expect(manifest.build.linux.artifactName).toBe('VinaHarness-linux-${arch}-${version}.${ext}')
     expect(manifest.build.afterPack).toBe('scripts/release/after-pack.cjs')
     expect(manifest.build.asarUnpack).toContain('node_modules/@deepseek-ai/libreoffice-kit-*/**/*')
   })

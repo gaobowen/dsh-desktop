@@ -6,12 +6,12 @@ import { describe, expect, it, vi } from 'vitest'
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
 interface Registration {
-  config: { name: string; id?: string; order?: number }
+  config: { name: string; id?: string; order?: number; inject?: () => Record<string, unknown> }
   component: (props: Record<string, unknown>) => unknown
 }
 
 describe('DSH Desktop client slot occupants', () => {
-  it('registers the VinaHarness wordmark and shares the SVG between both brand slots', async () => {
+  it('registers the VinaHarness wordmark, welcome headline and shared brand mark', async () => {
     const source = await readFile(
       path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
@@ -83,7 +83,19 @@ describe('DSH Desktop client slot occupants', () => {
         return () => undefined
       }
     }
-    plugin.apply({ slots, locale: { register: () => () => undefined, bind: () => (key: string) => key }, effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() } })
+    const dictionaries = new Map<string, Record<string, Record<string, string>>>()
+    let language = 'zh'
+    plugin.apply({
+      slots,
+      locale: {
+        register: (namespace: string, messages: Record<string, Record<string, string>>) => {
+          dictionaries.set(namespace, messages)
+          return () => dictionaries.delete(namespace)
+        },
+        bind: (namespace: string) => (key: string) => dictionaries.get(namespace)?.[language]?.[key] ?? key
+      },
+      effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() }
+    })
 
     expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
@@ -92,6 +104,7 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.brand.mark',
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
+      'conversation.hero.brand.title',
       'sidebar.right.tab.document.unpreviewable',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item',
@@ -124,5 +137,11 @@ describe('DSH Desktop client slot occupants', () => {
     )!.component({ size: 34, className: 'hero-mark' }) as { type: unknown; props: Record<string, unknown> }
     expect(heroMark.type).toBe('img')
     expect(heroMark.props).toMatchObject({ src: sidebarMark.props.src, width: 34, height: 34 * 24 / 31, className: 'hero-mark' })
+
+    const welcome = registrations.find(({ config }) => config.name === 'conversation.hero.brand.title')
+    const welcomeProps = welcome?.config.inject?.()
+    expect(welcome?.component(welcomeProps ?? {})).toBe('今天，想一起完成什么？')
+    language = 'en'
+    expect(welcome?.component(welcomeProps ?? {})).toBe('What would you like to work on together today?')
   })
 })

@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest'
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
 const releaseAssets = [
-  'dsh-desktop-mac-arm64.dmg',
-  'dsh-desktop-mac-x64.dmg',
-  'dsh-desktop-windows-x64-setup.exe'
+  'VinaHarness-mac-arm64.dmg',
+  'VinaHarness-mac-x64.dmg',
+  'VinaHarness-windows-x64-setup.exe'
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
@@ -189,11 +189,14 @@ describe('GitHub release contract', () => {
     expect(packageLock.packages['node_modules/@openai/codex']).toBeUndefined()
   })
 
-  it('uses stable platform-specific artifact names', async () => {
+  it('uses VinaHarness packaging metadata and platform-specific artifact names', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     ) as {
+      author: string
       build: {
+        appId: string
+        productName: string
         artifactName: string
         asar: boolean
         asarUnpack: string[]
@@ -204,7 +207,10 @@ describe('GitHub release contract', () => {
         portable?: unknown
       }
     }
-    expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
+    expect(packageJson.author).toBe('香港來畫科技有限公司')
+    expect(packageJson.build.appId).toBe('io.dsh.desktop')
+    expect(packageJson.build.productName).toBe('VinaHarness')
+    expect(packageJson.build.artifactName).toBe('VinaHarness-${os}-${arch}.${ext}')
     expect(packageJson.build.asar).toBe(true)
     // JavaScript stays in app.asar; only files the OS loads or executes unpack.
     expect(packageJson.build.asarUnpack).not.toContain('node_modules/**/*')
@@ -282,7 +288,7 @@ describe('GitHub release contract', () => {
       to: 'THIRD_PARTY_NOTICES.md'
     })
     expect(packageJson.build.nsis.artifactName).toBe(
-      'dsh-desktop-windows-${arch}-setup.${ext}'
+      'VinaHarness-windows-${arch}-setup.${ext}'
     )
     expect(packageJson.build.nsis.include).toBe('build/installer.nsh')
     expect(packageJson.build.win.target).toEqual([{ target: 'nsis', arch: ['x64'] }])
@@ -327,8 +333,8 @@ describe('GitHub release contract', () => {
       'latest-mac-x64.yml',
       'latest-mac.yml',
       'latest.yml',
-      'dsh-desktop-mac-${{ matrix.arch }}.zip.blockmap',
-      'dsh-desktop-windows-x64-setup.exe.blockmap'
+      'VinaHarness-mac-${{ matrix.arch }}.zip.blockmap',
+      'VinaHarness-windows-x64-setup.exe.blockmap'
     ]) {
       expect(workflow).toContain(asset)
     }
@@ -390,11 +396,11 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['package:dev:win']).toContain('electron-builder.dev.cjs')
     expect(packageJson.scripts['package:dev:win']).toContain('--publish never')
     expect(developmentConfig.appId).toBe('io.dsh.desktop.dev')
-    expect(developmentConfig.productName).toBe('DSH Desktop Dev')
+    expect(developmentConfig.productName).toBe('VinaHarness Dev')
     expect(developmentConfig.directories.output).toBe('dist-dev')
     expect(developmentConfig.extraMetadata.dshDesktopChannel).toBe('development')
-    expect(developmentConfig.artifactName).toBe('dsh-desktop-dev-${os}-${arch}.${ext}')
-    expect(developmentConfig.nsis.artifactName).toBe('dsh-desktop-dev-windows-${arch}-setup.${ext}')
+    expect(developmentConfig.artifactName).toBe('VinaHarness-dev-${os}-${arch}.${ext}')
+    expect(developmentConfig.nsis.artifactName).toBe('VinaHarness-dev-windows-${arch}-setup.${ext}')
   })
 
   it('builds the official package from the transplanted shell', async () => {
@@ -429,7 +435,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain("$isolatedApp = Join-Path $env:RUNNER_TEMP")
     expect(workflow).toContain('$executable = Join-Path $isolatedApp $sourceExecutable.Name')
     expect(workflow).toContain('Packaged koffi native binding failed (exit code $koffiExitCode).')
-    expect(workflow).toContain("'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
+    expect(workflow).toContain("'dist-dev\\win-unpacked\\VinaHarness Dev.exe'")
     expect(workflow).toContain('check-workbench-install.mjs "$executable"')
     expect(workflow).toContain('$process.Kill($true)')
     const acceptance = await readFile(path.join(projectRoot, 'scripts/verify/check-workbench-install.mjs'), 'utf8')
@@ -446,9 +452,9 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('mode:')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
-    expect(workflow).toContain('dist-dev/dsh-desktop-dev-windows-x64-setup.exe')
-    expect(workflow).toContain('dsh-desktop-mac-${{ matrix.arch }}.dmg')
-    expect(workflow).toContain('dsh-desktop-windows-x64-setup.exe')
+    expect(workflow).toContain('dist-dev/VinaHarness-dev-windows-x64-setup.exe')
+    expect(workflow).toContain('VinaHarness-mac-${{ matrix.arch }}.dmg')
+    expect(workflow).toContain('VinaHarness-windows-x64-setup.exe')
     expect(
       workflow.match(
         /npm version --no-git-tag-version --allow-same-version "\$\{\{ github\.ref_name \}\}"/g

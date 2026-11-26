@@ -30,12 +30,15 @@ describe('eight-language desktop menus', () => {
     darwin[0]?.submenu?.[1]?.click?.()
     expect(action).toHaveBeenCalledOnce()
     expect(shortcutFileMenuLabels(locale)).toEqual({ fileMenu: text.fileMenu, closePage: text.closePage })
-    const windows = buildWindowsApplicationMenu({ locale, connectPhone: action, restart: action, showHarnessLog: action, checkForUpdates: action, quit: action })
+    const windows = buildWindowsApplicationMenu({ locale, connectPhone: action, restart: action, showHarnessLog: action, quit: action })
     expect(windows[0]?.label).toBe(text.application)
     const run = vi.fn()
     const edit = vi.fn()
     const application = windowsMenuTemplate('application', locale, 1.25, { run, sendEditingKey: edit })
     expect(application[0]).toMatchObject({ label: text.phone, accelerator: 'Ctrl+Shift+M', registerAccelerator: false })
+    for (const removedLabel of [text.update, text.about, text.enterprise]) {
+      expect(application.some(item => item.label === removedLabel)).toBe(false)
+    }
     application[0]?.click?.({} as never, {} as never, {} as never)
     expect(run).toHaveBeenCalledWith('connect-phone')
     const view = application[5]?.submenu

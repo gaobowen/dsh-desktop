@@ -8,6 +8,8 @@ Python 和 wheel 的固定 URL/SHA-256 来源：[上游固定提交的 primary-r
 
 构建阶段下载并校验固定资源、离线解包 wheel，不运行 pip install，不依赖系统 Python。生成物位于忽略目录 `.build`；构建失败不能继续消费旧 payload。包内验证必须实际调用 Python 创建、重新读取 DOCX/PPTX/XLSX、检查 ZIP 正斜杠路径，执行技能结构检查及 LibreOffice 转换。Windows、Intel Mac 和 Linux x64 的执行验收须在对应原生 runner 完成；其他平台的成功不可替代。
 
+`npm run office:prepare` 对同一输出目录串行准备 Python、技能和模板。Windows 在生成目录内解包，资源齐全后再原子写入 `primary-runtime/runtime.json`，避免对刚写入的 Python 文件所在目录执行重命名。准备失败会保留原始错误并尝试清理未完成的运行时。
+
 本地 macOS arm64 开发目录包实测 Office 资源约 205 MiB（包含 Python、numpy/pandas 与 Office 库）；这不是 DMG/NSIS 压缩增量。首次运行不做联网安装或 Profile 复制；安装时间增量取决于目标安装器的解压，需要原生产物对照测量。
 
 ## Linux x64 Office 引擎与验收

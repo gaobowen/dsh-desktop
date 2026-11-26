@@ -18,7 +18,7 @@ const HOST_ATTRIBUTE = 'data-dsh-windows-menu'
  * collapses. The popups are native menus opened by the main process.
  *
  * Harness pages wait for AppFrame's shell overlay so the menubar appears with
- * the rendered application; Desktop's own pages (plugin recovery, splash) have
+ * the rendered application; Desktop's own pages that request menus have
  * no sidebar and mount immediately at the caption's left edge.
  */
 export function mountWindowsMenuBar(options: MenuBarOptions): { dispose(): void } {

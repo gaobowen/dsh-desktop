@@ -35,8 +35,7 @@ export function parseWindowsMenuRequest(name: unknown, x: unknown, y: unknown): 
 }
 
 /**
- * Build one caption menu. The application menu carries every Desktop command
- * the former dropdown offered; the edit menu mirrors upstream.
+ * Build one caption menu. The application menu groups window and Harness commands.
  * @param zoomFactor - current page zoom, shown on the reset item.
  */
 export function windowsMenuTemplate(
@@ -102,10 +101,6 @@ export function windowsMenuTemplate(
         command('toggle-fullscreen', text.fullscreen, 'F11')
       ]
     },
-    { type: 'separator' },
-    command('check-for-updates', text.update, 'Ctrl+U'),
-    command('about', text.about),
-    command('explore-enterprise', text.enterprise),
     { type: 'separator' },
     command('quit', text.exit)
   ]

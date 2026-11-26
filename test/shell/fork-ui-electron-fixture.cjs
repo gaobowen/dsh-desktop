@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, Menu } = require('electron')
 const { mkdirSync, writeFileSync } = require('node:fs')
 const { join } = require('node:path')
 
@@ -42,6 +42,26 @@ async function waitFor(read, description, timeoutMs = 70_000) {
   throw Error(`Fork UI did not reach ${description}`)
 }
 
+async function checkApplicationPopup(window, js) {
+  const openPopup = Menu.prototype.popup
+  let shownMenu
+  Menu.prototype.popup = function (options) {
+    if (options?.window === window) this.once('menu-will-show', () => { shownMenu = this })
+    return openPopup.call(this, options)
+  }
+  try {
+    await js(`document.querySelector('[data-dsh-windows-menu]').shadowRoot.querySelector('button[data-menu="application"]').click()`)
+    const menu = await waitFor(() => shownMenu, 'native application menu')
+    const layout = menu.items.map(item => item.type).join(',')
+    if (layout !== 'normal,normal,normal,normal,separator,submenu,separator,normal') {
+      throw Error(`Unexpected native application menu: ${menu.items.map(item => item.label || item.type).join(', ')}`)
+    }
+  } finally {
+    Menu.prototype.popup = openPopup
+    shownMenu?.closePopup(window)
+  }
+}
+
 async function accept() {
   const window = await waitFor(() => BrowserWindow.getAllWindows().find(candidate => {
     const url = candidate.webContents.getURL()
@@ -53,8 +73,17 @@ async function accept() {
     return mark?.naturalWidth > 0 && new URL(mark.currentSrc).hash === '#startup' &&
       document.querySelector('h1')?.textContent === 'VinaHarness';
   })()`), 'VinaHarness startup animation')
+  const hasCaption = process.platform === 'win32' || process.platform === 'linux'
+  if (hasCaption) {
+    await waitFor(() => js('!!document.getElementById("dsh-desktop-windows-drag-region")'), 'splash drag region')
+    if (await js('!!document.querySelector("[data-dsh-windows-menu]")')) throw Error('Unexpected splash caption menu')
+  }
   await waitFor(() => window.webContents.getURL().startsWith('dsh-app://app'), 'authenticated document', 170_000)
   await waitFor(() => js('!!document.querySelector(".dshVinabotForm")'), 'VinaRouter client activation')
+  const onboardingIntro = await js(`document.querySelector('.dshVinabotModalBody .dshVinabotIntro')?.innerText`)
+  if (!onboardingIntro?.includes('VinaHarness') || onboardingIntro.includes('DSH Desktop')) {
+    throw Error(`Unexpected VinaRouter onboarding description: ${onboardingIntro}`)
+  }
   const configured = await js(`(async()=>{
     const post=async(path,body)=>{const r=await fetch('/api/dsh-desktop/vinabot/'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw Error(JSON.stringify(result));return result};
     const flow=await post('login',{username:'fixture',password:'fixture'});
@@ -74,6 +103,18 @@ async function accept() {
       sidebarMark.currentSrc === heroMark.currentSrc &&
       new URL(heroMark.currentSrc).hash === '#mark';
   })()`), 'visible VinaHarness sidebar and welcome marks')
+  await waitFor(() => js(`(() => {
+    const headline = document.documentElement.lang.toLowerCase().startsWith('zh')
+      ? '今天，想一起完成什么？' : 'What would you like to work on together today?';
+    return [...document.querySelectorAll('span')].some(span => span.textContent === headline && span.getBoundingClientRect().width > 0);
+  })()`), 'localized VinaHarness welcome headline')
+  if (hasCaption) {
+    await waitFor(() => js(`(() => {
+      const menu = document.querySelector('[data-dsh-windows-menu]')?.shadowRoot;
+      return ['application', 'edit'].every(name => menu?.querySelector('button[data-menu="' + name + '"]')?.getBoundingClientRect().width > 0);
+    })()`), 'visible application and edit caption buttons')
+    await checkApplicationPopup(window, js)
+  }
   await waitFor(() => js(`(() => {const button=[...document.querySelectorAll('button')].find(b=>/^(新会话|New session|New chat)/i.test(b.textContent.trim()));if(!button || document.querySelector('.dshVinabotForm'))return false;button.click();return true})()`), 'new Session action')
   await waitFor(() => js('!!document.querySelector("[contenteditable=true]")'), 'standard Composer')
   await js('document.querySelector("[contenteditable=true]").focus()')
@@ -105,6 +146,13 @@ async function accept() {
     && !await visible('[data-office-dock="excel"]'), 'PPT gallery replaces Excel')
   evidence.officeModes = ['word', 'excel', 'ppt']
   await waitFor(() => click('[data-desktop-ppt][data-selected="true"]'), 'Return to standard Composer')
+  await waitFor(async () => await visible('[contenteditable=true]')
+    && !await visible('[data-office-ppt-template-panel]'), 'Standard Composer after Office mode changes')
+  // Mode changes can remount the editor. Seed the message in the current Composer.
+  if (!await js('document.querySelector("[contenteditable=true]").textContent.includes("fixture draft")')) {
+    await js('document.querySelector("[contenteditable=true]").focus()')
+    await window.webContents.insertText('fixture draft')
+  }
   await waitFor(() => click('button:is([aria-label="Send message"], [aria-label="发送消息"])'), 'Send fixture message')
   const sessionMenu = 'button[aria-haspopup="menu"]:is([aria-label="More actions"], [aria-label="更多操作"])'
   await waitFor(() => click(sessionMenu), 'Session Header menu')

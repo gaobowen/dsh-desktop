@@ -147,7 +147,7 @@ npm run dev
 
 `npm run dev` prepares the Office runtime and templates, prepares PPT, then starts the Electron shell and Host. Unpackaged launches default to `<repository>/.build/office-runtime/primary-runtime`, the output of `office:prepare`; `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` is optional and only needed to test a different runtime. Installed packages always use `Resources/office-runtime/primary-runtime` and ignore that development override.
 
-Development builds use the separate application name `DSH Desktop Dev` and the separate user-data directory `dsh-desktop-dev`, so they do not reuse production DSH Desktop data. Multiple development worktrees still share that development profile by default; avoid running them at the same time when testing profile, plugin, migration, or recovery changes.
+Development builds use the application name `VinaHarness Dev` and the user-data directory `dsh-desktop-dev`. The production `VinaHarness` profile lives in `dsh-desktop`. Multiple development worktrees still share that development profile by default; avoid running them at the same time when testing profile, plugin, migration, or recovery changes.
 
 To run another worktree concurrently, set a distinct `DSH_DEV_PROFILE` directory name and unused loopback ports using `DSH_DEV_HARNESS_PORT` and `DSH_DEV_MOBILE_PORT`. For example, on macOS:
 

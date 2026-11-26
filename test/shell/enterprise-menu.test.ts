@@ -121,13 +121,13 @@ describe('enterprise entry', () => {
       restart: () => { calls.push('restart') },
       restartSafeMode: () => { calls.push('safe') },
       showHarnessLog: () => { calls.push('log') },
-      checkForUpdates: () => { calls.push('update') },
       quit: () => { calls.push('quit') }
     })
     const labels = menu.flatMap(item => [item.label, ...(item.submenu ?? []).map(child => child.label)])
     expect(labels).toEqual(expect.arrayContaining(['应用', '连接手机…', '重启', '显示 Harness 日志', '编辑', '视图', '窗口']))
     const accelerators = menu.flatMap(item => (item.submenu ?? []).map(child => child.accelerator))
-    expect(accelerators).toEqual(expect.arrayContaining(['CmdOrCtrl+Shift+M', 'CmdOrCtrl+Shift+R', 'CmdOrCtrl+U']))
+    expect(accelerators.filter(Boolean)).toEqual(['CmdOrCtrl+Shift+M', 'CmdOrCtrl+Shift+R'])
+    expect(labels).not.toContain('检查更新…')
     const roles = menu.flatMap(item => (item.submenu ?? []).map(child => child.role))
     expect(roles).toEqual(expect.arrayContaining(['undo', 'copy', 'reload', 'zoomIn', 'togglefullscreen', 'quit']))
     menu[0]?.submenu?.[0]?.click?.()
@@ -137,7 +137,6 @@ describe('enterprise entry', () => {
       connectPhone: () => {},
       restart: () => {},
       showHarnessLog: () => {},
-      checkForUpdates: () => {},
       quit: () => {}
     })
     expect((withoutSafeMode[0]?.submenu ?? []).some(item => item.label === safeModeMenuLabel('en'))).toBe(false)

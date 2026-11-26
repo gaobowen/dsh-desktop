@@ -24,6 +24,22 @@ window.__ModuleLoader__.load({
         'Vina', React.createElement('span', null, 'Harness'))
     }
 
+    const WELCOME_NS = 'dsh-desktop-welcome'
+    const welcomeMessages = {
+      zh: { headline: '今天，想一起完成什么？' },
+      en: { headline: 'What would you like to work on together today?' },
+      ja: { headline: '今日は、一緒に何をしましょうか？' },
+      es: { headline: '¿Qué hacemos juntos hoy?' },
+      fr: { headline: 'Qu’aimeriez-vous accomplir ensemble aujourd’hui ?' },
+      de: { headline: 'Was möchten wir heute gemeinsam erledigen?' },
+      ru: { headline: 'Что сделаем вместе сегодня?' },
+      pt: { headline: 'O que vamos fazer juntos hoje?' }
+    }
+
+    function DesktopWelcomeTitle({ t }) {
+      return t('headline')
+    }
+
     function OpenUnpreviewableFile({ absolutePath, openWorkspacePath, t }) {
       const [error, setError] = React.useState('')
       const label = t('openLocal')
@@ -275,6 +291,7 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       applyRepair(ctx)
       ctx.effect(() => ctx.locale.register(ACTIONS_NS, actionMessages))
+      ctx.effect(() => ctx.locale.register(WELCOME_NS, welcomeMessages))
       const actionText = ctx.locale.bind(ACTIONS_NS)
       ctx.effect(() => {
         const id = 'dsh-desktop-preset-toolbar-style'
@@ -366,6 +383,13 @@ window.__ModuleLoader__.load({
             )
           })
         )
+      )
+      ctx.slots.inject('conversation.hero.brand.title', () =>
+        ctx.slots.register({
+          name: 'conversation.hero.brand.title',
+          locale: WELCOME_NS,
+          inject: () => ({ t: ctx.locale.bind(WELCOME_NS) })
+        }, DesktopWelcomeTitle)
       )
       ctx.slots.inject('sidebar.right.tab.document.unpreviewable', () =>
         ctx.slots.register({

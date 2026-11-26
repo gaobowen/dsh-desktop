@@ -23,7 +23,7 @@ npm test -- test/shell/<文件>.test.ts
 npm run package:mac:arm64
 ```
 
-产物是 `dist/dsh-desktop-mac-arm64.dmg`。安装前退出正在使用的正式应用，并保留当前应用和 `~/Library/Application Support/dsh-desktop` 的副本。
+产物是 `dist/VinaHarness-mac-arm64.dmg`。安装前退出正在使用的正式应用，并保留当前应用和 `~/Library/Application Support/dsh-desktop` 的副本。
 
 安全模式在同一条命令后加 `--safe-mode`。临时目录不要指向正式 `dsh-desktop`、开发 Profile `dsh-desktop-dev` 或 `~/.dsh`。
 

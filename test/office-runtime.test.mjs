@@ -5,8 +5,11 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { afterEach, describe, expect, it } from 'vitest'
 import { officeTarget, officeRuntimeIdentity, downloadAsset, unpackWheel, prepareOfficeRuntime } from '../scripts/office-runtime/prepare.mjs'
+import { prepareOfficeResources } from '../scripts/office-runtime/prepare-resources.mjs'
 import { officeCliAttempts, officeCliCommand, officeCliTimedOut, officeCliTimeoutMs, runOfficeCli } from '../scripts/office-runtime/prepare-templates.mjs'
 import { zipSync, unzipSync, strToU8 } from 'fflate'
 import { electronExecutable } from '../scripts/verify/electron-node-loader.mjs'
@@ -112,6 +115,27 @@ describe('Office runtime assembly', () => {
     await writeFile(join(output, 'runtime.json'), 'stale build')
     await expect(prepareOfficeRuntime({ target, cache, output })).rejects.toThrow('checksum mismatch')
     await expect(readFile(join(output, 'runtime.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('waits for the existing Office writer before touching its output and cleans up a failed preparation', async () => {
+    const workspace = await temporary()
+    const runtimeCache = join(workspace, 'downloads')
+    const output = join(workspace, 'office-runtime')
+    const metadata = join(output, 'primary-runtime', 'runtime.json')
+    const { targets } = JSON.parse(await readFile(join(root, 'scripts/office-runtime/lock.json'), 'utf8'))
+    await mkdir(runtimeCache)
+    await writeFile(join(runtimeCache, targets[officeTarget()].pythonSha256), 'corrupt Python')
+    await mkdir(join(output, 'primary-runtime'), { recursive: true })
+    await writeFile(metadata, 'previous runtime')
+    let result
+    await withFileLock(output, async () => {
+      result = prepareOfficeResources({ output, runtimeCache }).catch(error => error)
+      expect(await Promise.race([result, delay(250, 'waiting for the writer')])).toBe('waiting for the writer')
+      expect(await readFile(metadata, 'utf8')).toBe('previous runtime')
+    })
+    expect(await result).toMatchObject({ message: expect.stringContaining('checksum mismatch') })
+    await expect(readFile(metadata)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(`${output}.lock`)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('rejects wheel paths that escape site-packages or use unsupported installation schemes', async () => {

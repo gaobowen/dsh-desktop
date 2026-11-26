@@ -80,8 +80,6 @@ export function externalUrlToOpen(url: string): string | undefined {
  * Restart starts the current Host again. Safe Mode relaunches into the core profile when that action is supplied.
  * The next item reveals harness.log. It stays after Restart when Safe Mode is already active.
  * Phone pairing stays out of this menu.
- * Windows keeps a hidden copy of this command set so accelerators survive; the visible
- * caption is the in-page 应用 / 编辑 menu.
  */
 export function buildDarwinDesktopMenu(options: {
   locale: string
@@ -162,7 +160,6 @@ export function buildWindowsApplicationMenu(options: {
   restart: () => void
   restartSafeMode?: () => void
   showHarnessLog: () => void
-  checkForUpdates: () => void
   quit: () => void
 }): DesktopMenuItem[] {
   const text = desktopMenuMessages(options.locale)
@@ -188,8 +185,6 @@ export function buildWindowsApplicationMenu(options: {
           label: text.log,
           click: options.showHarnessLog
         },
-        { type: 'separator' },
-        { label: updateMenuLabel(options.locale), accelerator: 'CmdOrCtrl+U', click: options.checkForUpdates },
         { type: 'separator' },
         { role: 'quit', label: text.exit, click: options.quit }
       ]

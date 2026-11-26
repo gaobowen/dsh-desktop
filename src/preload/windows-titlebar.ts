@@ -52,7 +52,9 @@ export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions):
   installLayout(document)
   if (document.location.protocol === 'file:') installDragRegion(document)
   trackModals(document)
-  mountWindowsMenuBar({ document, ipcRenderer })
+  if (!document.documentElement.hasAttribute('data-dsh-hide-caption-menu')) {
+    mountWindowsMenuBar({ document, ipcRenderer })
+  }
 
   if (options.syncNativeTheme === false) return
   syncTheme(document, ipcRenderer)
