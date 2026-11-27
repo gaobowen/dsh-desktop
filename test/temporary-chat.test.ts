@@ -2,6 +2,7 @@ import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { runInNewContext, Script } from 'node:vm'
+import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createTemporaryChatWorkspace,
@@ -12,13 +13,25 @@ import { patchPath, projectRoot } from './patch-path'
 
 const roots: string[] = []
 
+async function workspaceBundle() {
+  const name = path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js')
+  return ts.createSourceFile(name, await readFile(name, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+}
+
+function workspaceNode(source: ts.SourceFile, predicate: (node: ts.Node) => boolean): ts.Node {
+  const find = (node: ts.Node): ts.Node | undefined => predicate(node) ? node : ts.forEachChild(node, find)
+  const found = find(source)
+  if (!found) throw new Error('Expected Workspace declaration is unavailable in the installed client')
+  return found
+}
+
 async function temporaryNavigation(createDirectory?: () => Promise<{ path: string }>) {
-  const source = await readFile(path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js'), 'utf8')
-  const start = source.indexOf('class extends', source.indexOf('var UiWorkspaceService ='))
-  const end = source.indexOf('\n\t\t};', start)
-  if (start < 0 || end < start) throw new Error('Installed Workspace navigation service is unavailable')
+  const source = await workspaceBundle()
+  const declaration = workspaceNode(source, node => ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) && node.name.text === 'UiWorkspaceService')
+  if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) throw new Error('Workspace service has no initializer')
   // Evaluate the installed service, without constructing its unrelated Cordis subscriptions.
-  const Service = runInNewContext(`(${source.slice(start, end + '\n\t\t}'.length)})`, {
+  const Service = runInNewContext(`(${declaration.initializer.getText(source)})`, {
     _deepseek_ai_cordis: { Service: class {} },
     dshDesktop: createDirectory ? { createTemporaryChatWorkspace: createDirectory } : undefined
   }) as { prototype: { createTemporarySession(): Promise<string>; startTemporarySession(): void } }
@@ -114,20 +127,16 @@ describe('temporary chat workspaces', () => {
   })
 
   it('groups temporary chats separately and retains their creation entry when ordinary folders are empty', async () => {
-    const source = await readFile(path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js'), 'utf8')
-    const functions = ['deriveGroups', 'mainSessionId', 'owningGroupKey', 'isTemporaryChatWorkspace', 'groupByWorkspace', 'buildGroup', 'sessionVisible'].map((name) => {
-      const start = source.indexOf(`function ${name}(`)
-      const end = source.indexOf('\n\t\t}', start)
-      if (start < 0 || end < start) throw new Error(`Installed Workspace grouping function ${name} is unavailable`)
-      return source.slice(start, end + '\n\t\t}'.length)
-    })
+    const source = await workspaceBundle()
+    const functions = ['deriveGroups', 'mainSessionId', 'owningGroupKey', 'isTemporaryChatWorkspace', 'groupByWorkspace', 'buildGroup', 'sessionVisible']
+      .map(name => workspaceNode(source, node => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(source))
     const derive = runInNewContext(`(() => {
       const TEMPORARY_CHAT_GROUP_KEY = '__dsh_desktop_temporary_chats__';
       ${functions.join('\n')}
       return (list, workspaces) => deriveGroups(list, workspaces,
         { archivedSessionIds: [], pinnedSessionIds: [], archivedFilter: 'default' },
         new Map(), { expandedGroups: [], ungroupedOrder: [] }, 'Temporary chats');
-    })()`) as (list: unknown, workspaces: unknown[]) => Array<{ key: string; label: string; sessionCount: number }>
+    })()`, { dshDesktop: { createTemporaryChatWorkspace() {} } }) as (list: unknown, workspaces: unknown[]) => Array<{ key: string; label: string; sessionCount: number }>
     const workspace = (id: string, directory: string, sessions: string[] = []) => ({
       workspaceId: id, path: directory, sessionIds: sessions, title: id, createdAt: '2026-10-22T00:00:00Z'
     })
@@ -159,10 +168,10 @@ describe('temporary chat workspaces', () => {
     expect(main).toContain('assertMain(event)')
     expect(preload).toContain('ipcRenderer.invoke(DESKTOP_IPC.temporaryChatCreate)')
     expect(workspacePatch).toContain('TEMPORARY_CHAT_GROUP_KEY')
-    expect(workspacePatch).toContain('"group.temporary": "临时会话"')
+    expect(workspacePatch).toMatch(/"group\.temporary":\s*`临时会话`/u)
     expect(workspacePatch).toContain('async createTemporarySession()')
     expect(workspacePatch).toContain('this.createTemporarySession().catch')
-    expect(conversationPatch).toContain('"workspace.temporary": "临时会话"')
+    expect(conversationPatch).toMatch(/"workspace\.temporary":\s*`临时会话`/u)
     expect(conversationPatch).not.toContain('function TemporaryInputBar')
     expect(conversationPatch).not.toContain('data-temporary-chat-composer')
     expect(sidebarPatch).toContain('workspaceNavigation.startTemporarySession()')

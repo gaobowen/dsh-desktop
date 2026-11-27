@@ -2,52 +2,40 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { expect, it, vi } from 'vitest'
 
-it('offers Markdown copy and log download in the Session Header when feedback is available', async () => {
-  const jsx = (type, props) => ({ type, props })
-  const dependencies = {
-    react: { useState: value => [value, () => {}] },
-    'react/jsx-runtime': { jsx, jsxs: jsx },
-    '@deepseek-ai/dsh-client-store': { createSnapshotStore: value => ({ getSnapshot: () => value }) },
-    '@deepseek-ai/dsh-client-ui-primitives': { Menu: 'Menu' }
+it('registers copy and download on the Session Header while the feedback service is available', async () => {
+  const createSnapshotStore = initial => {
+    let value = initial
+    return { getSnapshot: () => value, set: next => { value = next } }
   }
-  const openFeedback = vi.fn()
-  let HeaderAction
+  const dependencies = {
+    react: {},
+    'react/jsx-runtime': {},
+    '@deepseek-ai/dsh-client-store': { createSnapshotStore },
+    '@deepseek-ai/dsh-client-ui-primitives': {}
+  }
+  const openSession = vi.fn()
+  const contributions = []
   const ctx = {
-    get: name => name === 'feedbackUi' ? { open: openFeedback } : undefined,
+    get: key => key === 'feedbackUi' ? { openSession } : undefined,
     provide() {},
-    effect() {},
     on() {},
-    slots: {
-      inject: (_name, register) => register(),
-      register({ name }, component) {
-        if (name === 'conversation.session.header.utilities') HeaderAction = component
-      }
-    }
+    inject: (_services, activate) => activate(ctx),
+    effect: setup => setup(),
+    locale: { bind: () => key => key, register() {} },
+    slots: { inject() {} },
+    contextMenus: { register: contribution => { contributions.push(contribution) } }
   }
   const sandbox = {
-    window: { __ModuleLoader__: { load({ factory }) { factory(id => dependencies[id]).apply(ctx) } } }
+    window: { __ModuleLoader__: { load({ factory }) { factory(id => dependencies[id] ?? {}).apply(ctx) } } }
   }
   const bundle = new URL('../node_modules/@deepseek-ai/dsh-session-log-export/lib/client.js', import.meta.url)
   vm.runInNewContext(await readFile(bundle, 'utf8'), sandbox)
 
-  const request = vi.fn()
-  const copyMarkdown = vi.fn()
-  const tree = HeaderAction({
-    sessionId: 'fixture-session',
-    useSessionLogDownload: select => select({ bySession: {} }),
-    useSessionMarkdownCopy: select => select({ copying: false }),
-    useFeedbackAvailability: () => true,
-    openFeedback,
-    request,
-    copyMarkdown,
-    t: key => key
-  })
-  const menu = tree.props.children.find(child => child.type === 'Menu')
-  expect(menu.props.items.map(item => item.id)).toEqual(['copy', 'download'])
-
-  menu.props.onSelect('copy')
-  menu.props.onSelect('download')
-  expect(copyMarkdown).toHaveBeenCalledExactlyOnceWith('fixture-session')
-  expect(request).toHaveBeenCalledExactlyOnceWith('fixture-session')
-  expect(openFeedback).not.toHaveBeenCalled()
+  const headerItems = contributions.filter(entry => entry.target === 'sessionHeader')
+    .flatMap(entry => entry.resolve({ sessionId: 'fixture-session' }))
+  expect(headerItems.map(({ id, label, run }) => ({ id, label, run }))).toEqual([
+    { id: 'copy', label: 'menu.copyMarkdown', run: expect.any(Function) },
+    { id: 'download', label: 'menu.download', run: expect.any(Function) }
+  ])
+  expect(openSession).not.toHaveBeenCalled()
 })

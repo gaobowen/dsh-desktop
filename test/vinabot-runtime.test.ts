@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -7,35 +7,49 @@ import { expect, it } from 'vitest'
 
 import { CONFIGURE_PATH, LOGIN_PATH, STATUS_PATH, VINABOT_PROVIDER } from '../packages/dsh-desktop-vinabot/index.js'
 import { DesktopHostProcess } from '../src/main/shell/backend/host-process'
-import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/recovery/safe-mode-profile'
 import { ensureHostBundle, hostBundle } from './host/host-bundle-helper'
 
 it('configures all VinaRouter protocols and retains High after a Harness 0.2.2 restart', async () => {
   const root = resolve(import.meta.dirname, '..')
   const home = await mkdtemp(join(tmpdir(), 'dsh-vinabot-runtime-'))
+  const profile = join(home, 'profiles', 'desktop')
   const patch = join(home, 'vinabot.patch.yml')
   const relayStub = join(home, 'relay-stub.mjs')
+  const relayReady = join(home, 'relay-active')
   const capabilityProbe = join(home, 'capability-probe.mjs')
   await ensureHostBundle()
   let host: DesktopHostProcess | undefined
   let endpoint = ''
   const runtime = {
-    async start(_home: string, profile: string) {
+    async start() {
+      await rm(relayReady, { force: true })
       host = new DesktopHostProcess({
         node: createRequire(import.meta.url)('electron') as string,
-        entry: hostBundle, runtimeDir: root, projectDir: join(home, 'profiles', profile),
-        dshHome: home, profile,
+        entry: hostBundle, runtimeDir: root, projectDir: profile,
+        dshHome: home, profile: 'desktop',
         environment: { DSH_DESKTOP_PATCH_FILE: patch, NODE_OPTIONS: `--import=${pathToFileURL(relayStub).href}` },
         primaryRuntime: join(home, 'unused-runtime')
       })
       endpoint = (await host.start()).url
+      await access(relayReady)
     },
     snapshot() { return { phase: 'ready', logs: [] as string[], url: new URL(endpoint).origin, authToken: new URL(endpoint).searchParams.get('token') } },
     async stop() { await host?.stop() }
   }
   try {
-    await ensureSafeModeProfile(home)
-    await writeFile(patch, `- insert:
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-desktop', private: true, dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } }
+    }))
+    await writeFile(join(profile, 'cordis.yml'), '[]\n')
+    await writeFile(join(profile, 'cordis.patch.yml'), '[]\n')
+    const hmr = process.platform === 'win32' ? '- id: hmr\n  disabled: true\n' : ''
+    await writeFile(patch, `${hmr}- id: desktop-product-telemetry
+  disabled: true
+- id: product-analytics
+  disabled: true
+- insert:
     - id: dsh-desktop-vinabot
       name: dsh-desktop-vinabot
     - id: capability-probe
@@ -62,9 +76,11 @@ export function apply(ctx) {
 }
 `)
     await writeFile(relayStub, `
-const realFetch = globalThis.fetch;
+import { writeFileSync } from 'node:fs';
+writeFileSync(new URL('./relay-active', import.meta.url), 'ready');
+let realFetch = globalThis.fetch;
 let tokenName;
-globalThis.fetch = async (input, init) => {
+const relayFetch = async (input, init) => {
   const url = new URL(typeof input === 'string' ? input : input.url);
   if (url.origin !== 'https://router.vinabot.ai') return realFetch(input, init);
   const json = (data) => Response.json({ success: true, data });
@@ -91,8 +107,13 @@ globalThis.fetch = async (input, init) => {
   }
   throw new Error('Unexpected relay fixture path: ' + url.pathname);
 };
+// The profile's Undici globals can change after this Node preload runs.
+Object.defineProperty(globalThis, 'fetch', {
+  configurable: true, get: () => relayFetch,
+  set: fetch => { if (fetch !== relayFetch) realFetch = fetch; }
+});
 `)
-    await runtime.start(home, SAFE_MODE_PROFILE)
+    await runtime.start()
     const snapshot = runtime.snapshot()
     expect(snapshot.phase, snapshot.logs.join('\n')).toBe('ready')
     if (!snapshot.url || !snapshot.authToken) throw new Error('Harness did not announce its authenticated endpoint')
@@ -145,7 +166,7 @@ globalThis.fetch = async (input, init) => {
     expect(beforeRepair.request).toBeUndefined()
     expect(JSON.stringify(beforeRepair.chunks)).toContain('UNSUPPORTED_REASONING_EFFORT')
     await runtime.stop()
-    await runtime.start(home, SAFE_MODE_PROFILE)
+    await runtime.start()
     const restarted = runtime.snapshot()
     expect(restarted.phase, restarted.logs.join('\n')).toBe('ready')
     if (!restarted.url || !restarted.authToken) throw new Error('Harness restart did not announce its endpoint')

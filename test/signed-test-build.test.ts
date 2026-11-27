@@ -18,10 +18,10 @@ with tempfile.TemporaryDirectory() as work:
     directory = Path(work)
     for names in build.INSTALLERS.values():
         for _, name in names:
-            (directory / name).write_bytes(b'installer')
+            (directory / name.replace('dsh-desktop', 'VinaHarness')).write_bytes(b'installer')
     (directory / 'latest.yml').write_text('not an installer')
     for target, count in [('all', 3), ('macos', 2), ('windows', 1)]:
-        files = build.installer_paths(directory, target)
+        files = build.installer_paths(directory, target, 'VinaHarness')
         assert len(files) == count
         notes = build.build_notification('1.0.0-test.1', files, 'example/desktop', 'test/1.0.0-test.1/42', 'https://github.com/example/desktop/actions/runs/42')
         assert notes.count('/resolve/master/test/') == count
@@ -39,13 +39,13 @@ with tempfile.TemporaryDirectory() as work:
             raise AssertionError('invalid path accepted')
     (directory / 'VinaHarness-mac-arm64.dmg').unlink()
     try:
-        build.installer_paths(directory, 'all')
+        build.installer_paths(directory, 'all', 'VinaHarness')
     except ValueError:
         pass
     else:
         raise AssertionError('missing installer accepted')
     # A Windows-only run does not need the omitted macOS installer.
-    assert len(build.installer_paths(directory, 'windows')) == 1
+    assert len(build.installer_paths(directory, 'windows', 'VinaHarness')) == 1
 
     events = []
     api = MagicMock()
@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory() as work:
     sdk = types.ModuleType('modelscope.hub.api')
     sdk.HubApi = lambda: api
     env = dict(MODELSCOPE_REPO_ID='example/desktop', MODELSCOPE_TOKEN='fixture', FEISHU_RELEASE_WEBHOOK='fixture', GITHUB_SERVER_URL='https://github.com', GITHUB_REPOSITORY='example/desktop', GITHUB_STEP_SUMMARY=str(directory / 'summary'))
-    argv = ['signed_test_build.py', '--directory', work, '--target', 'windows', '--version', '1.0.0-test.1', '--run-id', '42']
+    argv = ['signed_test_build.py', '--directory', work, '--target', 'windows', '--version', '1.0.0-test.1', '--run-id', '42', '--artifact-prefix', 'VinaHarness', '--product-name', 'VinaHarness']
     with patch.dict(sys.modules, {'modelscope': types.ModuleType('modelscope'), 'modelscope.hub': types.ModuleType('modelscope.hub'), 'modelscope.hub.api': sdk}), patch.dict(os.environ, env), patch.object(sys, 'argv', argv), patch.object(build, 'summarize_test_changes', return_value='**功能**\n- 改善办公文档的预览体验。\n**问题修复**\n- 改善应用启动后的显示异常。'), patch.object(build, 'build_test_changes', return_value='feat: New Office preview\nDescription of preview') as changes, patch.object(build, 'verify_download', side_effect=lambda *args: events.append(('verify', args[0]))) as verify, patch.object(build, 'send_feishu_notification', side_effect=lambda *args, **kw: events.append(('notify', kw))) as notify:
         build.main()
         assert [e[0] for e in events] == ['upload', 'verify', 'upload', 'verify', 'notify']

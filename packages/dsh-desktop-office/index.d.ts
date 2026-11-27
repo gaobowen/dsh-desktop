@@ -11,6 +11,12 @@ export interface Config {
   legacyDocumentRoot?: string
 }
 export function apply(ctx: Context, config: Config): Promise<void>
+export interface OfficeRuntimeModules {
+  officeSkills: typeof import('@deepseek-ai/dsh-skill-office')
+  workspaceDependencies: typeof import('@deepseek-ai/dsh-tool-workspace-dependencies')
+}
+/** Caller's modes and registration adapters remain owned by its Cordis scope. */
+export function composeOffice(ctx: Context, config: Config, modes?: OfficeModes, runtime?: OfficeRuntimeModules): Promise<void>
 
 declare module '@deepseek-ai/cordis' {
   interface Context { officeModes: OfficeModes }

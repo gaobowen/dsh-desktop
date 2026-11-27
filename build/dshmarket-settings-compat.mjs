@@ -74,7 +74,7 @@ export function registerMarketSettingsCompatibility(dshEntryPath, note = (line) 
     if (error?.code === 'ENOENT') return undefined
     throw error
   }
-  if (!['0.2.1-rc.2', '0.2.2-rc.1'].includes(host.version)) return undefined
+  if (!['0.2.1-rc.2', '0.2.2-rc.1', '0.2.2-rc.5'].includes(host.version)) return undefined
   const packages = new Map()
   return registerHooks({
     load(url, context, nextLoad) {

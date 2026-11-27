@@ -3,7 +3,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { patchPath } from './patch-path'
+import { buildDesktopProductPatch, DESKTOP_SAFE_PRODUCT_PATCH } from '../src/main/shell/product-patch'
+import { readInstallationPlugins } from '../src/host/installation-plugins'
 
 import {
   VINABOT_ANTHROPIC_PROVIDER,
@@ -508,18 +509,18 @@ describe('VinaRouter setup flow', () => {
 describe('VinaRouter package wiring', () => {
   it('mounts the Host plugin and exposes setup and settings client surfaces', async () => {
     const root = join(import.meta.dirname, '..')
-    const [composition, host, client, manifest, dshPatch] = await Promise.all([
-      readFile(join(root, 'src/main/shell/product-patch.ts'), 'utf8'),
+    const [host, client, manifest] = await Promise.all([
       readFile(join(root, 'packages', 'dsh-desktop-vinabot', 'index.js'), 'utf8'),
       readFile(join(root, 'packages', 'dsh-desktop-vinabot', 'client.js'), 'utf8'),
-      readFile(join(root, 'package.json'), 'utf8'),
-      readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
+      readFile(join(root, 'package.json'), 'utf8')
     ])
-    expect(composition).toContain('name: dsh-desktop-vinabot')
-    expect(JSON.parse(manifest).dependencies['dsh-desktop-vinabot']).toBe(
+    const metadata = JSON.parse(manifest) as { dependencies: Record<string, string> }
+    expect(buildDesktopProductPatch(metadata)).toContain('name: dsh-desktop-vinabot')
+    expect(DESKTOP_SAFE_PRODUCT_PATCH).not.toContain('dsh-desktop-vinabot')
+    expect(metadata.dependencies['dsh-desktop-vinabot']).toBe(
       'file:packages/dsh-desktop-vinabot'
     )
-    expect(dshPatch).toContain('"dsh-desktop-vinabot": "0.1.0"')
+    expect(readInstallationPlugins(root, false)?.names).toContain('dsh-desktop-vinabot')
     expect(STATUS_PATH).toBe('/api/dsh-desktop/vinabot/status')
     expect(host).toContain("requestBody: 'buffered'")
     expect(client).toContain("const STATUS_PATH = '/api/dsh-desktop/vinabot/status'")

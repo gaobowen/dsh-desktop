@@ -1,6 +1,9 @@
 const { app, BrowserWindow, Menu } = require('electron')
-const { mkdirSync, writeFileSync } = require('node:fs')
+const childProcess = require('node:child_process')
+const { existsSync, mkdirSync, writeFileSync } = require('node:fs')
+const { syncBuiltinESMExports } = require('node:module')
 const { join } = require('node:path')
+const { fileURLToPath } = require('node:url')
 
 const root = process.env.DSH_FORK_UI_ROOT
 if (!root || !process.env.DSH_FORK_UI_ENTRY || !process.env.DSH_FORK_UI_RELAY) throw Error('Fork fixture paths missing')
@@ -17,8 +20,16 @@ writeFileSync(join(profile, 'package.json'), JSON.stringify({
 }))
 writeFileSync(join(profile, 'cordis.yml'), '[]\n')
 writeFileSync(join(profile, 'cordis.patch.yml'), '[]\n')
-// Only the child Host consumes this preload; the current Electron main is already running.
-process.env.NODE_OPTIONS = `--import=${process.env.DSH_FORK_UI_RELAY}`
+// Pass the fixture as a Node argument on the real Host launch, so Electron's
+// handling of inherited Node options cannot send the test login to the relay.
+const host = fileURLToPath(new URL('./host.js', process.env.DSH_FORK_UI_ENTRY))
+const spawn = childProcess.spawn
+childProcess.spawn = (command, args, options) => {
+  const entry = Array.isArray(args) ? args.indexOf(host) : -1
+  if (entry === -1) return spawn(command, args, options)
+  return spawn(command, [...args.slice(0, entry), '--import=' + process.env.DSH_FORK_UI_RELAY, ...args.slice(entry)], options)
+}
+syncBuiltinESMExports()
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 const watchdog = setTimeout(() => { console.error('Fork UI watchdog expired'); app.exit(2) }, 230_000)
 
@@ -79,6 +90,7 @@ async function accept() {
     if (await js('!!document.querySelector("[data-dsh-windows-menu]")')) throw Error('Unexpected splash caption menu')
   }
   await waitFor(() => window.webContents.getURL().startsWith('dsh-app://app'), 'authenticated document', 170_000)
+  if (!existsSync(join(root, 'relay-active'))) throw Error('The isolated Host did not load the relay fixture')
   await waitFor(() => js('!!document.querySelector(".dshVinabotForm")'), 'VinaRouter client activation')
   const onboardingIntro = await js(`document.querySelector('.dshVinabotModalBody .dshVinabotIntro')?.innerText`)
   if (!onboardingIntro?.includes('VinaHarness') || onboardingIntro.includes('DSH Desktop')) {
@@ -154,6 +166,7 @@ async function accept() {
     await window.webContents.insertText('fixture draft')
   }
   await waitFor(() => click('button:is([aria-label="Send message"], [aria-label="发送消息"])'), 'Send fixture message')
+  await waitFor(() => js('document.body.innerText.includes("Fixture reply")'), 'mocked VinaRouter reply')
   const sessionMenu = 'button[aria-haspopup="menu"]:is([aria-label="More actions"], [aria-label="更多操作"])'
   await waitFor(() => click(sessionMenu), 'Session Header menu')
   const exportLabels = await waitFor(() => js(`(() => {
@@ -162,7 +175,8 @@ async function accept() {
     if (!items.some(item => /^(Copy Session as Markdown|复制会话为 Markdown)$/i.test(item.textContent.trim()))) return false;
     return items.map(item => item.textContent.trim());
   })()`), 'visible Session export options')
-  if (exportLabels.length !== 2 || !exportLabels.some(label => /^(Download session log|下载 Session 日志)$/i.test(label))) {
+  if (!exportLabels.some(label => /^(Download session log|下载 Session 日志)$/i.test(label))
+    || exportLabels.some(label => /^(Feedback|反馈)$/i.test(label))) {
     throw Error('Unexpected Session Header menu: ' + JSON.stringify(exportLabels))
   }
   await waitFor(() => click(sessionMenu), 'Session Header menu close')

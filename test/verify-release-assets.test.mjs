@@ -37,7 +37,7 @@ describe('release asset verification', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-release-assets-'))
     try {
       await createFixture(root)
-      await expect(verifyReleaseAssets(root, '1.2.3', { minimumBytes })).resolves.toBeUndefined()
+      await expect(verifyReleaseAssets(root, '1.2.3', { minimumBytes, artifactPrefix: 'VinaHarness' })).resolves.toBeUndefined()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -47,7 +47,7 @@ describe('release asset verification', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-release-assets-'))
     try {
       await createFixture(root)
-      await expect(verifyReleaseAssets(root, '1.2.3')).rejects.toThrow('unexpectedly small')
+      await expect(verifyReleaseAssets(root, '1.2.3', { artifactPrefix: 'VinaHarness' })).rejects.toThrow('unexpectedly small')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -59,7 +59,7 @@ describe('release asset verification', () => {
       await createFixture(root)
       await rm(path.join(root, 'VinaHarness-mac-x64.dmg'))
       await expect(
-        verifyReleaseAssets(root, '1.2.3', { minimumBytes })
+        verifyReleaseAssets(root, '1.2.3', { minimumBytes, artifactPrefix: 'VinaHarness' })
       ).rejects.toThrow('Missing required release asset: VinaHarness-mac-x64.dmg')
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -72,7 +72,7 @@ describe('release asset verification', () => {
       await createFixture(root)
       await writeFile(path.join(root, 'VinaHarness-windows-x64-setup.exe'), 'not-an-exe')
       await expect(
-        verifyReleaseAssets(root, '1.2.3', { minimumBytes })
+        verifyReleaseAssets(root, '1.2.3', { minimumBytes, artifactPrefix: 'VinaHarness' })
       ).rejects.toThrow('is not a PE executable')
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -97,7 +97,7 @@ describe('release asset verification', () => {
         })
       )
       await expect(
-        verifyReleaseAssets(root, '1.2.3', { minimumBytes })
+        verifyReleaseAssets(root, '1.2.3', { minimumBytes, artifactPrefix: 'VinaHarness' })
       ).rejects.toThrow('latest.yml checksum or size does not match')
     } finally {
       await rm(root, { recursive: true, force: true })

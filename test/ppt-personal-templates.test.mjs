@@ -20,8 +20,10 @@ beforeAll(async () => {
   await cp(path.resolve('.build/ppt-runtime/packages/dsh-ppt'), packageRoot, { recursive: true });
   ({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))));
   ({ MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
-});
-afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true, force: true }); });
+}, NATIVE_TEMPLATE_TEST_TIMEOUT_MS);
+afterAll(async () => {
+  if (packageRoot) await rm(packageRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}, NATIVE_TEMPLATE_TEST_TIMEOUT_MS);
 afterEach(async () => { for (const root of cleanups.splice(0)) await rm(root, { recursive: true, force: true }); });
 
 async function fixture(existingRoot) {

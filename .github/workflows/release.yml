@@ -782,7 +782,7 @@ jobs:
           "$RUNNER_TEMP/test-upload-env/bin/pip" install -q modelscope
           "$RUNNER_TEMP/test-upload-env/bin/python3" .github/scripts/signed_test_build.py \
             --directory test-assets --target "$TEST_TARGET" \
-            --version "$SIGNED_VERSION" --run-id "$GITHUB_RUN_ID"
+            --version "$SIGNED_VERSION" --run-id "$GITHUB_RUN_ID" --artifact-prefix VinaHarness --product-name VinaHarness
 
   publish:
     name: Publish GitHub Release
@@ -861,7 +861,7 @@ jobs:
       - name: Verify release assets before publication
         run: |
           set -euo pipefail
-          node scripts/verify/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}"
+          node scripts/verify/verify-release-assets.mjs release-assets "${RELEASE_TAG#v}" --artifact-prefix VinaHarness
       - name: Build GitHub release note prompt
         run: |
           set -euo pipefail
@@ -1114,7 +1114,7 @@ jobs:
             \( -name latest-mac-arm64.yml -o -name latest-mac-x64.yml \) \
             -delete
       - name: Verify release assets before publication
-        run: node scripts/verify/verify-release-assets.mjs release-assets "${{ inputs.version }}"
+        run: node scripts/verify/verify-release-assets.mjs release-assets "${{ inputs.version }}" --artifact-prefix VinaHarness
       - name: Create or update pre-release
         env:
           GH_TOKEN: ${{ github.token }}

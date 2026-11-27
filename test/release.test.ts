@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.2-rc.1'
+const HARNESS_VERSION = '0.2.2-rc.5'
 
 describe('GitHub release contract', () => {
   it('builds Windows notification area, taskbar, and desktop icon sizes', async () => {
@@ -194,9 +194,12 @@ describe('GitHub release contract', () => {
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     ) as {
       author: string
+      dshDesktopIdentity: { productName: string, userDataDirectory: string, developmentUserDataDirectory: string }
+      dshDesktopHostPlugins: string[]
       build: {
         appId: string
         productName: string
+        extraMetadata: { dshDesktopIdentity: unknown, dshDesktopHostPlugins: unknown }
         artifactName: string
         asar: boolean
         asarUnpack: string[]
@@ -210,6 +213,14 @@ describe('GitHub release contract', () => {
     expect(packageJson.author).toBe('香港來畫科技有限公司')
     expect(packageJson.build.appId).toBe('io.dsh.desktop')
     expect(packageJson.build.productName).toBe('VinaHarness')
+    expect(packageJson.dshDesktopIdentity).toEqual({
+      productName: 'VinaHarness', userDataDirectory: 'dsh-desktop', developmentUserDataDirectory: 'dsh-desktop-dev'
+    })
+    expect(packageJson.dshDesktopHostPlugins).toContain('dsh-desktop-vinabot')
+    expect(packageJson.build.extraMetadata).toEqual({
+      dshDesktopIdentity: packageJson.dshDesktopIdentity,
+      dshDesktopHostPlugins: packageJson.dshDesktopHostPlugins
+    })
     expect(packageJson.build.artifactName).toBe('VinaHarness-${os}-${arch}.${ext}')
     expect(packageJson.build.asar).toBe(true)
     // JavaScript stays in app.asar; only files the OS loads or executes unpack.
@@ -234,11 +245,14 @@ describe('GitHub release contract', () => {
       'build/harness-node-entry.mjs',
       'build/host-module-fallback.mjs',
       'build/windows-hidden-console.mjs',
-      'build/windows-child-process-hide.mjs',
-      'build/windows-hide-console-import.mjs'
+      'build/windows-child-process-hide.mjs'
     ]) {
       expect(packageJson.build.extraResources).not.toContainEqual(expect.objectContaining({ from: removed }))
     }
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/windows-hide-console-import.mjs',
+      to: 'windows-hide-console-import.mjs'
+    })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/packaged-pnpm-invocation.mjs',
       to: 'packaged-pnpm-invocation.mjs'

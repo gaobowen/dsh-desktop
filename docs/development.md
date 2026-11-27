@@ -2,6 +2,37 @@
 
 This guide covers local development, validation, patch maintenance, and target-native packaging. For the runtime design, see [Architecture](architecture.md). For formal releases, see the [release runbook](release-runbook.md).
 
+## Fork v0.14.1 upgrade
+
+The fork merges the upstream `v0.14.1` tag at `0f3ac98` and uses
+Harness `0.2.2-rc.5`. The application package and the lockfile report 0.14.1.
+Application metadata declares VinaHarness and keeps the existing `dsh-desktop`
+and `dsh-desktop-dev` data directories. VinaRouter is declared as an
+installation-owned plugin and resolves from the current application manifest
+in normal Desktop profiles. Safe Mode omits that declaration, so it retains
+its isolated upstream resolution. The market compatibility shim remains
+limited to the audited legacy version and files.
+
+Temporary chats still use the Desktop IPC bridge and the standard Workspace
+and Composer. The three browser patches are rebased on rc.5 for the sidebar
+entry, workspace grouping and conversation label. The session log export patch
+keeps Markdown copy and log download on the new Context Menu Registry and
+omits the feedback item. Sidebar brand outlets use the existing mark and
+name slots in the native layout.
+
+The upstream Office template library loads through the normal desktop-office
+entry. Word and Excel use the lightweight shared state service. The PPT
+renderer and converter load on demand. Existing `kimi-ppt` state and legacy
+`dsh-ppt` mode choices continue to resolve. Windows Office preparation
+assembles its runtime in place and publishes the readiness manifest last.
+
+Windows x64 verification covers the native Harness loader, authenticated Host
+startup, normal and Safe Mode profiles, and the actual Electron UI. The UI
+fixture uses a temporary profile and a mocked VinaRouter. It verifies an
+editable temporary chat, the High default, the Office mode controls and a
+Responses reply. The unpacked Windows application also mounts the branded
+sidebar and VinaRouter onboarding under independently verified user data.
+
 ## Fork v0.14.0 migration boundary (2026-11-14)
 
 The fork merges upstream `v0.14.0` pinned to commit `bbc7494`, not moving main. The
@@ -132,7 +163,7 @@ git remote set-url --push upstream DISABLED
 - npm
 - macOS on Apple Silicon or Intel, or Windows x64
 
-This baseline pins `@deepseek-ai/dsh@0.2.2-rc.1`. The new shell runs its Host with the Electron executable in Node mode (using the Helper executable on macOS), independently of the Node.js version used to run development commands.
+This baseline pins `@deepseek-ai/dsh@0.2.2-rc.5`. The Desktop shell uses Electron in Node mode to start its Host, with the Helper executable on macOS. The version of Node.js used for development commands is independent.
 
 ## Local setup
 
@@ -149,13 +180,13 @@ npm run dev
 
 Development builds use the application name `VinaHarness Dev` and the user-data directory `dsh-desktop-dev`. The production `VinaHarness` profile lives in `dsh-desktop`. Multiple development worktrees still share that development profile by default; avoid running them at the same time when testing profile, plugin, migration, or recovery changes.
 
-To run another worktree concurrently, set a distinct `DSH_DEV_PROFILE` directory name and unused loopback ports using `DSH_DEV_HARNESS_PORT` and `DSH_DEV_MOBILE_PORT`. For example, on macOS:
+To run another worktree concurrently, set a distinct `DSH_DEV_PROFILE` directory name and an unused `DSH_DEV_MOBILE_PORT`. For example, on macOS:
 
 ```bash
-DSH_DEV_PROFILE=dsh-desktop-dev-workbench DSH_DEV_HARNESS_PORT=43132 DSH_DEV_MOBILE_PORT=43133 npm run dev
+DSH_DEV_PROFILE=dsh-desktop-dev-workbench DSH_DEV_MOBILE_PORT=43133 npm run dev
 ```
 
-On PowerShell, set the same names through `$env:DSH_DEV_PROFILE`, `$env:DSH_DEV_HARNESS_PORT` and `$env:DSH_DEV_MOBILE_PORT` before `npm run dev`. The profile must be a directory name, separate from `dsh-desktop`; ports must be distinct integers from 1024 to 65535. These overrides are ignored by production builds. Defaults remain `dsh-desktop-dev`, Harness port 43130 and mobile port 43128.
+On PowerShell, set `$env:DSH_DEV_PROFILE` and `$env:DSH_DEV_MOBILE_PORT` before `npm run dev`. The profile must be a directory name, separate from `dsh-desktop`; the mobile port must be an integer from 1024 to 65535. Production builds ignore these overrides. The defaults are `dsh-desktop-dev` and mobile port 43128. Harness binds to a system-assigned loopback port.
 
 On Windows, an unpackaged launch gives Harness up to five minutes to initialize
 its plugin tree on a cold start. An explicit `DSH_LOADER_TIMEOUT_MS` value

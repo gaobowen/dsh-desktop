@@ -10,6 +10,7 @@ module.exports = {
     output: 'dist-dev'
   },
   extraMetadata: {
+    ...packageJson.build.extraMetadata,
     name: 'dsh-desktop-dev',
     productName,
     dshDesktopChannel: 'development'

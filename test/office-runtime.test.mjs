@@ -10,7 +10,7 @@ import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { afterEach, describe, expect, it } from 'vitest'
 import { officeTarget, officeRuntimeIdentity, downloadAsset, unpackWheel, prepareOfficeRuntime } from '../scripts/office-runtime/prepare.mjs'
 import { prepareOfficeResources } from '../scripts/office-runtime/prepare-resources.mjs'
-import { officeCliAttempts, officeCliCommand, officeCliTimedOut, officeCliTimeoutMs, runOfficeCli } from '../scripts/office-runtime/prepare-templates.mjs'
+import { officeCliAttempts, officeCliCommand, officeCliTimedOut, officeCliTimeoutMs, officePreviewFontArgs, officePreviewFontFallbacks, runOfficeCli } from '../scripts/office-runtime/prepare-templates.mjs'
 import { zipSync, unzipSync, strToU8 } from 'fflate'
 import { electronExecutable } from '../scripts/verify/electron-node-loader.mjs'
 
@@ -59,6 +59,17 @@ describe('Office template preview limits', () => {
       throw invalid
     })).rejects.toBe(invalid)
     expect(invalidCalls).toBe(1)
+  })
+
+  it('substitutes the meeting title face with a simplified Chinese family before Latin fallbacks', () => {
+    const meeting = officePreviewFontFallbacks.find(group => group[0] === 'Hiragino Sans GB W3')
+    const sans = officePreviewFontFallbacks.find(group => group[0] === 'sans-serif')
+    expect(meeting?.slice(0, 4)).toEqual(['Hiragino Sans GB W3', 'Microsoft YaHei', 'Microsoft YaHei UI', '微软雅黑'])
+    expect(meeting).not.toContain('Hiragino Sans GB')
+    expect(officePreviewFontFallbacks.indexOf(meeting)).toBeLessThan(officePreviewFontFallbacks.indexOf(sans))
+    const args = officePreviewFontArgs()
+    expect(args[0]).toBe('--font-fallbacks')
+    expect(JSON.parse(args[1])[0][0]).toBe('Hiragino Sans GB W3')
   })
 })
 

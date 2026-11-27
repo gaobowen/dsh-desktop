@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
@@ -18,6 +18,7 @@ describe('Desktop account UI composition', () => {
         .toBe('@deepseek-ai/dsh-client-ui-settings-account')
       const entries = composeEntries([web, desktop])
       expect(entries.find((entry) => entry.id === 'ui-settings-account')?.disabled).toBe(true)
+      expect(entries.find((entry) => entry.id === 'ui-account-notifications')?.disabled).toBe(true)
       for (const name of ['@deepseek-ai/dsh-client-ui-settings-general', '@deepseek-ai/dsh-client-ui-settings-models']) {
         expect(entries.filter((entry) => entry.name === name && !entry.disabled)).toHaveLength(1)
       }
@@ -27,12 +28,14 @@ describe('Desktop account UI composition', () => {
   it('shell desktop patch disables account UI and desktop platform sign-in', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-product-patch-'))
     try {
-      const patch = await writeDesktopProductPatch(home)
+      const metadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+      const patch = await writeDesktopProductPatch(home, 'desktop', metadata)
       const base = loadOverlayPatches('test', join(root, 'node_modules/@deepseek-ai/dsh-base/cordis.patch.yml'))
       const web = loadOverlayPatches('test', join(root, 'node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml'))
       const shell = loadOverlayPatches('test', patch)
       const entries = composeEntries([base, web, shell])
       expect(entries.find((entry) => entry.id === 'ui-settings-account')?.disabled).toBe(true)
+      expect(entries.find((entry) => entry.id === 'ui-account-notifications')?.disabled).toBe(true)
       expect(entries.find((entry) => entry.id === 'deepseek-account')?.config).toMatchObject({ desktopPlatform: null })
       expect(entries.find((entry) => entry.id === 'desktop-product-telemetry')?.disabled).toBe(true)
       expect(entries.find((entry) => entry.id === 'product-analytics')?.disabled).toBe(true)
@@ -63,8 +66,9 @@ describe('Desktop account UI composition', () => {
         }
       })
       expect(entries.find((entry) => entry.id === 'dsh-desktop-vinabot')?.name).toBe('dsh-desktop-vinabot')
-      const safePatch = await writeDesktopProductPatch(home, 'safe')
+      const safePatch = await writeDesktopProductPatch(home, 'safe', metadata)
       const safeEntries = composeEntries([base, web, loadOverlayPatches('test', safePatch)])
+      expect(safeEntries.find((entry) => entry.id === 'ui-account-notifications')?.disabled).toBe(true)
       expect(safeEntries.find((entry) => entry.id === 'dsh-desktop-workbenches')).toBeUndefined()
       expect(safeEntries.find((entry) => entry.id === 'dsh-desktop-market-installer')).toBeUndefined()
       expect(safeEntries.find((entry) => entry.id === 'dsh-desktop-office')).toBeUndefined()
@@ -74,7 +78,7 @@ describe('Desktop account UI composition', () => {
         expect(entries.filter((entry) => entry.name === name && !entry.disabled)).toHaveLength(1)
       }
       for (const mode of ['desktop', 'safe']) {
-        const windowsDev = await writeDesktopProductPatch(home, mode, { skipBlockingHmr: true })
+        const windowsDev = await writeDesktopProductPatch(home, mode, metadata, { skipBlockingHmr: true })
         const windowsEntries = composeEntries([base, loadOverlayPatches('test', windowsDev)])
         expect(windowsEntries.find((entry) => entry.id === 'hmr')?.disabled).toBe(true)
       }

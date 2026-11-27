@@ -30,3 +30,10 @@ export declare function createOfficeModes(root: string): Omit<OfficeModes, 'stat
     state(sessionId: string): ReturnType<import('./ppt-service.ts').PptService['state']>;
 };
 export type { PptService } from './ppt-service.ts';
+export { installWebModePolicy, type PresentationModeState } from '../web-mode-policy.js';
+export {
+    createOfficePptxScopePolicyController,
+    registerOfficePptxScopePolicy,
+    type OfficePptxScopePolicy,
+    type OfficePptxScopePolicyController
+} from '../office-pptx-scope-policy.js';

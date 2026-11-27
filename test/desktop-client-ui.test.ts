@@ -16,6 +16,7 @@ describe('DSH Desktop client slot occupants', () => {
       path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
     )
+    expect(source).not.toMatch(/Bisheng|enterprise\.work|dshEnterprise|desktop\.chatWork|remote\.skills|SharedCollection|WorkResource/)
     let definition: {
       factory: (require: (id: string) => unknown) => {
         apply: (ctx: unknown) => void
@@ -97,7 +98,7 @@ describe('DSH Desktop client slot occupants', () => {
       effect: (setup: () => (() => void) | undefined) => { disposeStyle = setup() }
     })
 
-    expect(plugin.inject).toEqual(['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace'])
+    expect(plugin.inject).toEqual(['locale', 'slots', 'sessions', 'uiWorkspace', 'configForms', 'sidebarRight', 'sidebarRightTabs'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
       'conversation.input.dock',
       'sidebar.settings.action',
@@ -105,7 +106,6 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.brand.name',
       'conversation.hero.brand.mark',
       'conversation.hero.brand.title',
-      'sidebar.right.tab.document.unpreviewable',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item',
       'sidebar.workspaces.session.menu.item'

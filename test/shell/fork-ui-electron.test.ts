@@ -18,15 +18,21 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
     for (const directory of ['node_modules', 'build']) {
       await symlink(join(root, directory), join(application, directory), process.platform === 'win32' ? 'junction' : 'dir')
     }
+    const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as Record<string, unknown>
     await writeFile(join(application, 'package.json'), JSON.stringify({
-      name: 'dsh-desktop', version: '0.14.0', main: 'fixture.cjs', type: 'module'
+      name: manifest.name, version: manifest.version, main: 'fixture.cjs', type: 'module',
+      dependencies: manifest.dependencies,
+      dshDesktopIdentity: manifest.dshDesktopIdentity,
+      dshDesktopHostPlugins: manifest.dshDesktopHostPlugins
     }))
     const fixture = await readFile(join(root, 'test/shell/fork-ui-electron-fixture.cjs'), 'utf8')
     await writeFile(join(application, 'fixture.cjs'), fixture)
     const relay = join(temporary, 'relay.mjs')
     await writeFile(relay, `
-      const original = globalThis.fetch; let tokenName;
-      globalThis.fetch = async (input, init) => {
+      import { writeFileSync } from 'node:fs';
+      writeFileSync(new URL('./relay-active', import.meta.url), 'ready');
+      let original = globalThis.fetch; let tokenName;
+      const relayFetch = async (input, init) => {
         const url = new URL(typeof input === 'string' ? input : input.url);
         if(url.origin !== 'https://router.vinabot.ai') return original(input, init);
         const json = data => Response.json({success:true,data});
@@ -49,6 +55,12 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
         if(url.pathname === '/api/user/auth/logout') return json({});
         throw Error('Unexpected relay fixture path: '+url.pathname);
       };
+      // rc.5 installs Undici globals during profile boot. Keep the relay mock
+      // active and delegate unrelated requests to the current transport.
+      Object.defineProperty(globalThis, 'fetch', {
+        configurable: true, get: () => relayFetch,
+        set: fetch => { if (fetch !== relayFetch) original = fetch; }
+      });
     `)
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -57,7 +69,6 @@ it('mounts the fork UI in the real shell and opens an editable temporary Session
       DSH_FORK_UI_RELAY: pathToFileURL(relay).href,
       DSH_DESKTOP_PRIMARY_RUNTIME_DIR: join(root, '.build/office-runtime/primary-runtime'),
       DSH_DEV_PROFILE: 'fork-acceptance',
-      DSH_DEV_HARNESS_PORT: '44310',
       DSH_DEV_MOBILE_PORT: '44311'
     }
     delete env.ELECTRON_RUN_AS_NODE
